@@ -5,11 +5,34 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"go-project/views"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// clearScreen clears the terminal screen (cross-platform)
+func clearScreen() {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "cls")
+	case "darwin", "linux":
+		cmd = exec.Command("clear")
+	default:
+		// Fallback to ANSI escape codes
+		fmt.Print("\033[2J\033[H")
+		return
+	}
+
+	cmd.Stdout = os.Stdout
+	if err := cmd.Run(); err != nil {
+		// If command fails, use ANSI escape codes as fallback
+		fmt.Print("\033[2J\033[H")
+	}
+}
 
 // model is the main application model that orchestrates different views
 type model struct {
@@ -101,18 +124,20 @@ func (m model) View() string {
 }
 
 func main() {
+	// Load configuration
+	config, err := LoadConfig("appsettings.json")
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
 	// Initialize database connection
-	if err := InitDB(); err != nil {
+	if err := InitDB(config); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer CloseDB()
 
-	// Clear terminal before starting TUI
-	cmd := exec.Command("clear")
-	cmd.Stdout = os.Stdout
-	if err := cmd.Run(); err != nil {
-		log.Fatal(err)
-	}
+	// Clear terminal before starting TUI (cross-platform)
+	clearScreen()
 
 	// Start the Bubble Tea program
 	p := tea.NewProgram(initialModel())

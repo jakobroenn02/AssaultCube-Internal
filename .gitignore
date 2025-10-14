@@ -27,6 +27,9 @@ go-project
 # env file
 .env
 
+# Configuration files with sensitive data
+appsettings.json
+
 # Editor/IDE
 # .idea/
 # .vscode/

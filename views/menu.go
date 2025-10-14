@@ -1,9 +1,10 @@
 package views
 
 import (
-	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // MenuModel represents the main menu view
@@ -47,19 +48,36 @@ func (m MenuModel) Update(msg tea.KeyMsg) (MenuModel, tea.Cmd, ViewTransition) {
 
 // View renders the menu
 func (m MenuModel) View() string {
-	s := "Welcome! Please select an option:\n\n"
+	var s strings.Builder
 
+	// Title with styling
+	title := TitleStyle.Render("🌟 Welcome to TUI App!")
+	s.WriteString(lipgloss.NewStyle().Width(50).Align(lipgloss.Center).Render(title))
+	s.WriteString("\n\n")
+
+	subtitle := SubtitleStyle.Render("Please select an option:")
+	s.WriteString(subtitle)
+	s.WriteString("\n\n")
+
+	// Menu items with styling
 	for i, choice := range m.Choices {
-		cursor := " "
 		if m.Cursor == i {
-			cursor = ">"
+			s.WriteString(SelectedItemStyle.Render("▸ " + choice))
+		} else {
+			s.WriteString(UnselectedItemStyle.Render(choice))
 		}
-		s += fmt.Sprintf("%s %s\n", cursor, choice)
+		s.WriteString("\n")
 	}
 
-	s += "\nUse arrow keys to navigate, Enter to select, q to quit.\n"
+	// Help text
+	help := HelpStyle.Render("\n↑/k up • ↓/j down • enter select • q quit")
+	s.WriteString(help)
 
-	return s
+	// Wrap everything in a nice box
+	content := s.String()
+	box := BoxStyle.Render(content)
+
+	return "\n" + box + "\n"
 }
 
 // Reset resets the menu state

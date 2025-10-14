@@ -10,10 +10,12 @@ import (
 
 var DB *sql.DB
 
-// InitDB initializes the database connection
-func InitDB() error {
-	// Connection string format: username:password@tcp(host:port)/database
-	dsn := "dev:7155@tcp(127.0.0.1:3306)/tuiapp?parseTime=true"
+// InitDB initializes the database connection using the provided config
+func InitDB(config *Config) error {
+	// Get the DSN from config
+	dsn := config.Database.GetDSN()
+
+	log.Printf("Attempting to connect to MySQL at %s:%d...", config.Database.Host, config.Database.Port)
 
 	var err error
 	DB, err = sql.Open("mysql", dsn)
@@ -21,12 +23,24 @@ func InitDB() error {
 		return fmt.Errorf("error opening database: %w", err)
 	}
 
+	// Set connection pool settings
+	DB.SetMaxOpenConns(10)
+	DB.SetMaxIdleConns(5)
+
 	// Test the connection
 	if err = DB.Ping(); err != nil {
-		return fmt.Errorf("error connecting to database: %w", err)
+		return fmt.Errorf("error connecting to database at %s:%d (user: %s, db: %s): %w",
+			config.Database.Host,
+			config.Database.Port,
+			config.Database.User,
+			config.Database.Database,
+			err)
 	}
 
-	log.Println("Successfully connected to MySQL database 'tuiapp'")
+	log.Printf("Successfully connected to MySQL database '%s' at %s:%d",
+		config.Database.Database,
+		config.Database.Host,
+		config.Database.Port)
 	return nil
 }
 

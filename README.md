@@ -8,8 +8,12 @@ A Terminal User Interface (TUI) application built with [Bubble Tea](https://gith
 go_project/
 ├── main.go           # Application entry point and orchestration
 ├── db.go             # Database connection and initialization
+├── config.go         # Configuration loading and management
+├── appsettings.json  # Configuration file (gitignored)
+├── appsettings.example.json  # Example configuration template
 ├── views/            # View components package
 │   ├── types.go      # Common types and interfaces
+│   ├── styles.go     # Lipgloss styling definitions
 │   ├── menu.go       # Main menu view
 │   ├── login.go      # Login view
 │   └── register.go   # Registration view
@@ -84,10 +88,33 @@ CREATE TABLE users (
 
 ## Configuration
 
-- **Database**: tuiapp
-- **User**: root
-- **Password**: 7155
-- **Host**: 127.0.0.1:3306
+The application uses a JSON configuration file for settings including database credentials.
+
+### Setup Configuration
+
+1. Copy the example configuration file:
+   ```bash
+   cp appsettings.example.json appsettings.json
+   ```
+
+2. Edit `appsettings.json` with your database credentials:
+   ```json
+   {
+     "database": {
+       "host": "localhost",
+       "port": 3306,
+       "user": "root",
+       "password": "your_password_here",
+       "database": "tuiapp"
+     },
+     "app": {
+       "name": "TUI App",
+       "version": "1.0.0"
+     }
+   }
+   ```
+
+**Note**: The `appsettings.json` file is excluded from version control to protect sensitive credentials. Always use `appsettings.example.json` as a template.
 
 ## Running the Application
 
@@ -124,5 +151,7 @@ To add a new view:
 ## Dependencies
 
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI framework
+- [Lipgloss](https://github.com/charmbracelet/lipgloss) - Terminal styling
+- [Bubbles](https://github.com/charmbracelet/bubbles) - TUI components (text input, etc.)
 - [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) - MySQL driver
 - [bcrypt](https://pkg.go.dev/golang.org/x/crypto/bcrypt) - Password hashing

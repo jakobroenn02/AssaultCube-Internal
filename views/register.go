@@ -5,128 +5,174 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // RegisterModel represents the registration form view
 type RegisterModel struct {
-	Username     string
-	Password     string
-	FocusedField int // 0 = username, 1 = password, 2 = submit button
-	Error        string
-	Success      bool
-	DB           *sql.DB
+	UsernameInput textinput.Model
+	PasswordInput textinput.Model
+	FocusedField  int // 0 = username, 1 = password, 2 = submit button
+	Error         string
+	Success       bool
+	DB            *sql.DB
 }
 
 // NewRegisterModel creates a new registration model
 func NewRegisterModel(db *sql.DB) RegisterModel {
+	usernameInput := textinput.New()
+	usernameInput.Placeholder = "Enter username"
+	usernameInput.Focus()
+	usernameInput.CharLimit = 50
+	usernameInput.Width = 30
+	usernameInput.PromptStyle = FocusedStyle
+	usernameInput.TextStyle = FocusedStyle
+
+	passwordInput := textinput.New()
+	passwordInput.Placeholder = "Enter password"
+	passwordInput.CharLimit = 100
+	passwordInput.Width = 30
+	passwordInput.EchoMode = textinput.EchoPassword
+	passwordInput.EchoCharacter = '•'
+
 	return RegisterModel{
-		Username:     "",
-		Password:     "",
-		FocusedField: 0,
-		Error:        "",
-		Success:      false,
-		DB:           db,
+		UsernameInput: usernameInput,
+		PasswordInput: passwordInput,
+		FocusedField:  0,
+		Error:         "",
+		Success:       false,
+		DB:            db,
 	}
 }
 
 // Update handles registration form input
 func (m RegisterModel) Update(msg tea.KeyMsg) (RegisterModel, tea.Cmd, ViewTransition) {
-	switch msg.String() {
-	case "up":
-		if m.FocusedField > 0 {
-			m.FocusedField--
-		}
+	var cmd tea.Cmd
 
-	case "down":
-		if m.FocusedField < 2 {
+	switch msg.String() {
+	case "tab", "shift+tab", "up", "down":
+		// Cycle through fields
+		if msg.String() == "up" || msg.String() == "shift+tab" {
+			m.FocusedField--
+		} else {
 			m.FocusedField++
 		}
 
-	case "tab":
-		m.FocusedField = (m.FocusedField + 1) % 3
+		// Wrap around
+		if m.FocusedField < 0 {
+			m.FocusedField = 2
+		} else if m.FocusedField > 2 {
+			m.FocusedField = 0
+		}
+
+		// Update focus states
+		if m.FocusedField == 0 {
+			m.UsernameInput.Focus()
+			m.PasswordInput.Blur()
+			m.UsernameInput.PromptStyle = FocusedStyle
+			m.UsernameInput.TextStyle = FocusedStyle
+			m.PasswordInput.PromptStyle = BlurredStyle
+			m.PasswordInput.TextStyle = BlurredStyle
+		} else if m.FocusedField == 1 {
+			m.UsernameInput.Blur()
+			m.PasswordInput.Focus()
+			m.UsernameInput.PromptStyle = BlurredStyle
+			m.UsernameInput.TextStyle = BlurredStyle
+			m.PasswordInput.PromptStyle = FocusedStyle
+			m.PasswordInput.TextStyle = FocusedStyle
+		} else {
+			m.UsernameInput.Blur()
+			m.PasswordInput.Blur()
+			m.UsernameInput.PromptStyle = BlurredStyle
+			m.UsernameInput.TextStyle = BlurredStyle
+			m.PasswordInput.PromptStyle = BlurredStyle
+			m.PasswordInput.TextStyle = BlurredStyle
+		}
 
 	case "enter":
 		if m.FocusedField == 2 {
 			return m.handleSubmit()
 		}
-
-	case "backspace":
-		if m.FocusedField == 0 && len(m.Username) > 0 {
-			m.Username = m.Username[:len(m.Username)-1]
-		} else if m.FocusedField == 1 && len(m.Password) > 0 {
-			m.Password = m.Password[:len(m.Password)-1]
-		}
-
-	default:
-		// Regular character input (including 'k' and 'j')
-		if len(msg.String()) == 1 {
-			if m.FocusedField == 0 {
-				m.Username += msg.String()
-			} else if m.FocusedField == 1 {
-				m.Password += msg.String()
-			}
-		}
 	}
 
-	return m, nil, NoTransition()
+	// Update the focused input
+	if m.FocusedField == 0 {
+		m.UsernameInput, cmd = m.UsernameInput.Update(msg)
+	} else if m.FocusedField == 1 {
+		m.PasswordInput, cmd = m.PasswordInput.Update(msg)
+	}
+
+	return m, cmd, NoTransition()
 }
 
 // View renders the registration form
 func (m RegisterModel) View() string {
 	var s strings.Builder
 
-	s.WriteString("=== Register ===\n\n")
+	// Title
+	title := TitleStyle.Render("✨ Register")
+	s.WriteString(title)
+	s.WriteString("\n\n")
 
 	if m.Success {
-		s.WriteString("✓ Registration successful!\n\n")
-		s.WriteString("Press 'esc' to go back to menu.\n")
-		return s.String()
+		successMsg := SuccessStyle.Render("✓ Registration successful!")
+		s.WriteString(successMsg)
+		s.WriteString("\n\n")
+		helpText := HelpStyle.Render("Press 'esc' to go back to menu")
+		s.WriteString(helpText)
+
+		content := s.String()
+		box := BoxStyle.Render(content)
+		return "\n" + box + "\n"
 	}
 
 	// Username field
-	if m.FocusedField == 0 {
-		s.WriteString("> Username: " + m.Username + "_\n")
-	} else {
-		s.WriteString("  Username: " + m.Username + "\n")
-	}
+	s.WriteString("Username\n")
+	s.WriteString(m.UsernameInput.View())
+	s.WriteString("\n\n")
 
-	// Password field (masked)
-	maskedPassword := strings.Repeat("*", len(m.Password))
-	if m.FocusedField == 1 {
-		s.WriteString("> Password: " + maskedPassword + "_\n")
-	} else {
-		s.WriteString("  Password: " + maskedPassword + "\n")
-	}
-
-	s.WriteString("\n")
+	// Password field
+	s.WriteString("Password\n")
+	s.WriteString(m.PasswordInput.View())
+	s.WriteString("\n\n")
 
 	// Submit button
+	var button string
 	if m.FocusedField == 2 {
-		s.WriteString("> [Register]\n")
+		button = FocusedButtonStyle.Render("[ Register ]")
 	} else {
-		s.WriteString("  [Register]\n")
+		button = BlurredButtonStyle.Render("[ Register ]")
 	}
+	s.WriteString(button)
 
 	// Error message
 	if m.Error != "" {
-		s.WriteString("\n❌ Error: " + m.Error + "\n")
+		s.WriteString("\n\n")
+		errorMsg := ErrorStyle.Render("❌ " + m.Error)
+		s.WriteString(errorMsg)
 	}
 
-	s.WriteString("\nUse arrow keys/tab to navigate, type to enter text, Enter to submit.\n")
-	s.WriteString("Press 'esc' to go back to menu, q to quit.\n")
+	// Help text
+	s.WriteString("\n\n")
+	helpText := HelpStyle.Render("tab navigate • enter submit • esc back")
+	s.WriteString(helpText)
 
-	return s.String()
+	content := s.String()
+	box := BoxStyle.Render(content)
+	return "\n" + box + "\n"
 }
 
 // Reset resets the registration form
 func (m RegisterModel) Reset() RegisterModel {
-	m.Username = ""
-	m.Password = ""
+	m.UsernameInput.SetValue("")
+	m.PasswordInput.SetValue("")
 	m.FocusedField = 0
 	m.Error = ""
 	m.Success = false
+	m.UsernameInput.Focus()
+	m.PasswordInput.Blur()
 	return m
 }
 
@@ -135,24 +181,27 @@ func (m RegisterModel) handleSubmit() (RegisterModel, tea.Cmd, ViewTransition) {
 	// Reset error
 	m.Error = ""
 
+	username := m.UsernameInput.Value()
+	password := m.PasswordInput.Value()
+
 	// Validate input
-	if m.Username == "" {
+	if username == "" {
 		m.Error = "Username cannot be empty"
 		return m, nil, NoTransition()
 	}
 
-	if m.Password == "" {
+	if password == "" {
 		m.Error = "Password cannot be empty"
 		return m, nil, NoTransition()
 	}
 
-	if len(m.Password) < 6 {
+	if len(password) < 6 {
 		m.Error = "Password must be at least 6 characters"
 		return m, nil, NoTransition()
 	}
 
 	// Hash the password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(m.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		m.Error = "Failed to hash password"
 		return m, nil, NoTransition()
@@ -160,7 +209,7 @@ func (m RegisterModel) handleSubmit() (RegisterModel, tea.Cmd, ViewTransition) {
 
 	// Insert into database
 	query := "INSERT INTO users (username, password_hash) VALUES (?, ?)"
-	_, err = m.DB.Exec(query, m.Username, string(hashedPassword))
+	_, err = m.DB.Exec(query, username, string(hashedPassword))
 	if err != nil {
 		// Check if username already exists
 		if strings.Contains(err.Error(), "Duplicate entry") {
