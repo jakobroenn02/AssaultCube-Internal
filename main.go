@@ -47,7 +47,7 @@ func initialModel() model {
 	return model{
 		currentView:   views.MenuViewType,
 		menuModel:     views.NewMenuModel(),
-		loginModel:    views.NewLoginModel(),
+		loginModel:    views.NewLoginModel(DB),
 		registerModel: views.NewRegisterModel(DB),
 	}
 }

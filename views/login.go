@@ -1,10 +1,12 @@
 package views
 
 import (
+	"database/sql"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // LoginModel represents the login form view
@@ -13,10 +15,13 @@ type LoginModel struct {
 	PasswordInput textinput.Model
 	FocusedField  int // 0 = username, 1 = password, 2 = submit button
 	Error         string
+	Success       bool
+	LoggedInUser  string
+	DB            *sql.DB
 }
 
 // NewLoginModel creates a new login model
-func NewLoginModel() LoginModel {
+func NewLoginModel(db *sql.DB) LoginModel {
 	usernameInput := textinput.New()
 	usernameInput.Placeholder = "Enter username"
 	usernameInput.Focus()
@@ -37,6 +42,9 @@ func NewLoginModel() LoginModel {
 		PasswordInput: passwordInput,
 		FocusedField:  0,
 		Error:         "",
+		Success:       false,
+		LoggedInUser:  "",
+		DB:            db,
 	}
 }
 
@@ -86,8 +94,7 @@ func (m LoginModel) Update(msg tea.KeyMsg) (LoginModel, tea.Cmd, ViewTransition)
 
 	case "enter":
 		if m.FocusedField == 2 {
-			// TODO: Implement login logic
-			m.Error = "Login functionality not implemented yet"
+			return m.handleLogin()
 		}
 	}
 
@@ -109,6 +116,22 @@ func (m LoginModel) View() string {
 	title := TitleStyle.Render("🔐 Login")
 	s.WriteString(title)
 	s.WriteString("\n\n")
+
+	// If login successful, show success message
+	if m.Success {
+		successMsg := SuccessStyle.Render("✓ Login successful!")
+		s.WriteString(successMsg)
+		s.WriteString("\n\n")
+		welcomeMsg := SubtitleStyle.Render("Welcome back, " + m.LoggedInUser + "!")
+		s.WriteString(welcomeMsg)
+		s.WriteString("\n\n")
+		helpText := HelpStyle.Render("Press 'esc' to go back to menu")
+		s.WriteString(helpText)
+
+		content := s.String()
+		box := BoxStyle.Render(content)
+		return "\n" + box + "\n"
+	}
 
 	// Username field
 	s.WriteString("Username\n")
@@ -152,7 +175,58 @@ func (m LoginModel) Reset() LoginModel {
 	m.PasswordInput.SetValue("")
 	m.FocusedField = 0
 	m.Error = ""
+	m.Success = false
+	m.LoggedInUser = ""
 	m.UsernameInput.Focus()
 	m.PasswordInput.Blur()
 	return m
+}
+
+// handleLogin processes the login attempt
+func (m LoginModel) handleLogin() (LoginModel, tea.Cmd, ViewTransition) {
+	// Reset error
+	m.Error = ""
+
+	username := m.UsernameInput.Value()
+	password := m.PasswordInput.Value()
+
+	// Validate input
+	if username == "" {
+		m.Error = "Username cannot be empty"
+		return m, nil, NoTransition()
+	}
+
+	if password == "" {
+		m.Error = "Password cannot be empty"
+		return m, nil, NoTransition()
+	}
+
+	// Query the database for the user
+	var storedHash string
+	var userID int
+	query := "SELECT id, password_hash FROM users WHERE username = ?"
+	err := m.DB.QueryRow(query, username).Scan(&userID, &storedHash)
+
+	if err == sql.ErrNoRows {
+		m.Error = "Invalid username or password"
+		return m, nil, NoTransition()
+	} else if err != nil {
+		m.Error = "Database error occurred"
+		return m, nil, NoTransition()
+	}
+
+	// Compare the password with the stored hash
+	err = bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password))
+	if err != nil {
+		m.Error = "Invalid username or password"
+		return m, nil, NoTransition()
+	}
+
+	// Login successful!
+	m.Success = true
+	m.LoggedInUser = username
+
+	// TODO: Transition to a home/dashboard view
+	// For now, just show success message
+	return m, nil, NoTransition()
 }
