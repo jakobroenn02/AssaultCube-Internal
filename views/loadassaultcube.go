@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"go-project/injection"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -29,10 +31,17 @@ type LoadAssaultCubeModel struct {
 	Error         string
 	Status        string
 	Searching     bool
+	Launching     bool
+	Injected      bool
+	DLLPath       string
 }
 
 // NewLoadAssaultCubeModel creates a new assault cube loader model
 func NewLoadAssaultCubeModel(username string) LoadAssaultCubeModel {
+	// Get the DLL path (assuming it's in trainer/actrainer.dll)
+	dllPath := filepath.Join("trainer", "actrainer.dll")
+	absPath, _ := filepath.Abs(dllPath)
+
 	return LoadAssaultCubeModel{
 		Username:      username,
 		GamePath:      "",
@@ -42,6 +51,9 @@ func NewLoadAssaultCubeModel(username string) LoadAssaultCubeModel {
 		Error:         "",
 		Status:        "Ready to search for Assault Cube",
 		Searching:     false,
+		Launching:     false,
+		Injected:      false,
+		DLLPath:       absPath,
 	}
 }
 
@@ -53,11 +65,10 @@ func (m LoadAssaultCubeModel) Update(msg tea.KeyMsg) (LoadAssaultCubeModel, tea.
 		m = m.FindAndValidateGame()
 	case "s":
 		// Launch game (only if valid)
-		if m.GameFound && m.ChecksumValid {
-			m.Status = "Launching Assault Cube..."
-			// TODO: Implement DLL injection and launch
+		if m.GameFound {
+			m = m.LaunchAndInject()
 		} else {
-			m.Error = "Cannot launch - game not validated"
+			m.Error = "Cannot launch - game not found"
 		}
 	}
 
@@ -82,10 +93,18 @@ func (m LoadAssaultCubeModel) View() string {
 	s.WriteString("Status: ")
 	if m.Searching {
 		s.WriteString(SubtitleStyle.Render("🔍 Searching for game..."))
+	} else if m.Launching {
+		s.WriteString(SubtitleStyle.Render("⏳ Launching game..."))
 	} else {
 		s.WriteString(m.Status)
 	}
 	s.WriteString("\n\n")
+
+	// Show error if present
+	if m.Error != "" {
+		s.WriteString(ErrorStyle.Render("❌ Error: " + m.Error))
+		s.WriteString("\n\n")
+	}
 
 	// Game detection results
 	if m.GameFound {
@@ -95,19 +114,36 @@ func (m LoadAssaultCubeModel) View() string {
 		s.WriteString(fmt.Sprintf("Version: %s\n", m.GameVersion))
 		s.WriteString("\n")
 
-		if m.ChecksumValid {
-			s.WriteString(SuccessStyle.Render("✓ Checksum Valid - Ready to Launch"))
+		// Show DLL status
+		if _, err := os.Stat(m.DLLPath); err == nil {
+			s.WriteString(SuccessStyle.Render("✓ Trainer DLL Ready"))
+			s.WriteString("\n")
+		} else {
+			s.WriteString(ErrorStyle.Render("❌ Trainer DLL Not Found"))
+			s.WriteString("\n")
+			s.WriteString(fmt.Sprintf("Expected at: %s\n", m.DLLPath))
+		}
+		s.WriteString("\n")
+
+		if m.Injected {
+			s.WriteString(SuccessStyle.Render("✓ Trainer Active!"))
 			s.WriteString("\n\n")
-			launchBtn := FocusedButtonStyle.Render("[ S ] Start Game")
+			s.WriteString("Game is running with trainer injected.\n")
+			s.WriteString("Use hotkeys in-game:\n")
+			s.WriteString("  F1  - God Mode\n")
+			s.WriteString("  F2  - Infinite Ammo\n")
+			s.WriteString("  F3  - No Recoil\n")
+			s.WriteString("  F4  - Add Health\n")
+			s.WriteString("  END - Unload Trainer\n")
+		} else if m.Launching {
+			s.WriteString(SubtitleStyle.Render("⏳ Launching game..."))
+		} else if m.Error != "" {
+			// Show error and still allow retry
+			launchBtn := BlurredButtonStyle.Render("[ S ] Retry Start Game")
 			s.WriteString(launchBtn)
 		} else {
-			s.WriteString(ErrorStyle.Render("❌ Checksum Invalid"))
-			s.WriteString("\n")
-			s.WriteString("The game executable doesn't match known versions.\n")
-			s.WriteString("This could indicate:\n")
-			s.WriteString("  • Wrong game version\n")
-			s.WriteString("  • Modified executable\n")
-			s.WriteString("  • Corrupted installation\n")
+			launchBtn := FocusedButtonStyle.Render("[ S ] Start Game with Trainer")
+			s.WriteString(launchBtn)
 		}
 	} else if m.Error != "" {
 		s.WriteString(ErrorStyle.Render("❌ Error: " + m.Error))
@@ -250,4 +286,37 @@ func (m LoadAssaultCubeModel) calculateMD5(filepath string) (string, error) {
 	}
 
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// LaunchAndInject launches the game and injects the trainer DLL
+func (m LoadAssaultCubeModel) LaunchAndInject() LoadAssaultCubeModel {
+	m.Launching = true
+	m.Status = "Launching Assault Cube..."
+	m.Error = ""
+
+	// Check if DLL exists
+	if _, err := os.Stat(m.DLLPath); os.IsNotExist(err) {
+		m.Error = fmt.Sprintf("Trainer DLL not found at: %s", m.DLLPath)
+		m.Status = "Launch failed"
+		m.Launching = false
+		return m
+	}
+
+	// Launch the game and inject DLL
+	err := injection.LaunchAndInject(m.GamePath, m.DLLPath)
+	if err != nil {
+		m.Error = fmt.Sprintf("Failed to inject trainer: %v", err)
+		m.Status = "Injection failed"
+		m.Launching = false
+		return m
+	}
+
+	// Give the DLL a moment to initialize
+	time.Sleep(500 * time.Millisecond)
+
+	m.Status = "✓ Trainer injected successfully!"
+	m.Injected = true
+	m.Launching = false
+
+	return m
 }
