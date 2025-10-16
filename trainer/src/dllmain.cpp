@@ -65,6 +65,9 @@ DWORD WINAPI MainThread(LPVOID lpParameter) {
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     switch (dwReason) {
     case DLL_PROCESS_ATTACH:
+        // Show immediate message box to confirm DLL loaded
+        MessageBoxA(NULL, "DLL Injected! Press OK to start trainer.", "Assault Cube Trainer", MB_OK | MB_ICONINFORMATION);
+        
         // Disable DLL_THREAD_ATTACH and DLL_THREAD_DETACH notifications
         DisableThreadLibraryCalls(hModule);
         

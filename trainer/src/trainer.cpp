@@ -2,6 +2,21 @@
 #include "trainer.h"
 #include "memory.h"
 #include <iostream>
+#include <fstream>
+
+// Helper to write to log file
+void LogToFile(const std::string& message) {
+    // Write to user's temp folder - guaranteed writable
+    char tempPath[MAX_PATH];
+    GetTempPathA(MAX_PATH, tempPath);
+    std::string logPath = std::string(tempPath) + "trainer_debug.txt";
+    
+    std::ofstream logFile(logPath, std::ios::app);
+    if (logFile.is_open()) {
+        logFile << message << std::endl;
+        logFile.close();
+    }
+}
 
 Trainer::Trainer(uintptr_t base) 
     : moduleBase(base),
@@ -22,12 +37,20 @@ Trainer::~Trainer() {
 
 bool Trainer::Initialize() {
     std::cout << "Initializing trainer..." << std::endl;
+    LogToFile("=== TRAINER INITIALIZING ===");
     
     // Read LocalPlayer pointer from ac_client.exe + 0x0017E0A8
     playerBase = Memory::Read<uintptr_t>(moduleBase + 0x0017E0A8);
     
+    char buffer[256];
+    sprintf_s(buffer, "Module Base: 0x%08X", moduleBase);
+    LogToFile(buffer);
+    sprintf_s(buffer, "Player Base: 0x%08X", playerBase);
+    LogToFile(buffer);
+    
     if (playerBase == 0) {
         std::cout << "ERROR: Failed to read player base from 0x" << std::hex << (moduleBase + 0x0017E0A8) << std::dec << std::endl;
+        LogToFile("ERROR: Player base is NULL!");
         return false;
     }
     
@@ -38,11 +61,36 @@ bool Trainer::Initialize() {
     armorAddress = playerBase + 0xF0;   // Armor Value
     ammoAddress = playerBase + 0x140;   // Assault Rifle Ammo
     
+    sprintf_s(buffer, "Health Address: 0x%08X", healthAddress);
+    LogToFile(buffer);
+    sprintf_s(buffer, "Armor Address: 0x%08X", armorAddress);
+    LogToFile(buffer);
+    sprintf_s(buffer, "Ammo Address: 0x%08X", ammoAddress);
+    LogToFile(buffer);
+    
     std::cout << "Health address: 0x" << std::hex << healthAddress << std::dec << std::endl;
     std::cout << "Armor address: 0x" << std::hex << armorAddress << std::dec << std::endl;
     std::cout << "Ammo address: 0x" << std::hex << ammoAddress << std::dec << std::endl;
     
-    std::cout << "Trainer initialized successfully!" << std::endl;
+    // Read and display current values to verify addresses are correct
+    int currentHealth = Memory::Read<int>(healthAddress);
+    int currentArmor = Memory::Read<int>(armorAddress);
+    int currentAmmo = Memory::Read<int>(ammoAddress);
+    
+    sprintf_s(buffer, "Current Health: %d", currentHealth);
+    LogToFile(buffer);
+    sprintf_s(buffer, "Current Armor: %d", currentArmor);
+    LogToFile(buffer);
+    sprintf_s(buffer, "Current Ammo: %d", currentAmmo);
+    LogToFile(buffer);
+    
+    std::cout << "\nCurrent values:" << std::endl;
+    std::cout << "  Health: " << currentHealth << std::endl;
+    std::cout << "  Armor: " << currentArmor << std::endl;
+    std::cout << "  Ammo: " << currentAmmo << std::endl;
+    
+    std::cout << "\nTrainer initialized successfully!" << std::endl;
+    LogToFile("=== TRAINER READY ===\n");
     return true;
 }
 
@@ -80,26 +128,70 @@ void Trainer::Run() {
 
 void Trainer::ToggleGodMode() {
     godMode = !godMode;
+    
+    LogToFile(godMode ? "=== F1 PRESSED: God Mode ON ===" : "=== F1 PRESSED: God Mode OFF ===");
+    
+    std::cout << "\n========================================" << std::endl;
     std::cout << "God Mode: " << (godMode ? "ON" : "OFF") << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout.flush();
     
     if (godMode && healthAddress) {
-        // Set health to 100 (typical max in Assault Cube)
+        // Read current values first
+        int currentHealth = Memory::Read<int>(healthAddress);
+        int currentArmor = Memory::Read<int>(armorAddress);
+        
+        char buffer[256];
+        sprintf_s(buffer, "Before: Health=%d, Armor=%d", currentHealth, currentArmor);
+        LogToFile(buffer);
+        
+        std::cout << "  Current Health: " << currentHealth << ", Armor: " << currentArmor << std::endl;
+        std::cout.flush();
+        
+        // Set health and armor to 100 (typical max in Assault Cube)
         SetHealth(100);
         SetArmor(100);
+        std::cout << "  Set Health and Armor to 100" << std::endl;
+        std::cout.flush();
+        
+        // Verify the write worked
+        int newHealth = Memory::Read<int>(healthAddress);
+        int newArmor = Memory::Read<int>(armorAddress);
+        
+        sprintf_s(buffer, "After: Health=%d, Armor=%d", newHealth, newArmor);
+        LogToFile(buffer);
+        
+        std::cout << "  New Health: " << newHealth << ", Armor: " << newArmor << std::endl;
+        std::cout << "========================================\n" << std::endl;
+        std::cout.flush();
     }
 }
 
 void Trainer::ToggleInfiniteAmmo() {
     infiniteAmmo = !infiniteAmmo;
+    std::cout << "\n========================================" << std::endl;
     std::cout << "Infinite Ammo: " << (infiniteAmmo ? "ON" : "OFF") << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout.flush();
     
-    // Option 1: Patch the ammo decrease instruction (requires finding the instruction)
-    // Option 2: Keep setting ammo to max value in UpdatePlayerData()
+    if (infiniteAmmo && ammoAddress) {
+        int currentAmmo = Memory::Read<int>(ammoAddress);
+        std::cout << "  Current Ammo: " << currentAmmo << std::endl;
+        std::cout.flush();
+        SetAmmo(100);
+        int newAmmo = Memory::Read<int>(ammoAddress);
+        std::cout << "  Set Ammo to 100, New Ammo: " << newAmmo << std::endl;
+        std::cout << "========================================\n" << std::endl;
+        std::cout.flush();
+    }
 }
 
 void Trainer::ToggleNoRecoil() {
     noRecoil = !noRecoil;
+    std::cout << "\n========================================" << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
+    std::cout << "========================================\n" << std::endl;
+    std::cout.flush();
     
     // This would require patching recoil-related instructions
     // Need to find the recoil code in the game
@@ -109,7 +201,11 @@ void Trainer::AddHealth(int amount) {
     if (healthAddress) {
         int currentHealth = Memory::Read<int>(healthAddress);
         SetHealth(currentHealth + amount);
-        std::cout << "Added " << amount << " health. New health: " << (currentHealth + amount) << std::endl;
+        std::cout << "\n========================================" << std::endl;
+        std::cout << "Added " << amount << " health." << std::endl;
+        std::cout << "Old health: " << currentHealth << " -> New health: " << (currentHealth + amount) << std::endl;
+        std::cout << "========================================\n" << std::endl;
+        std::cout.flush();
     }
 }
 
