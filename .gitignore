@@ -30,6 +30,11 @@ go-project
 # Configuration files with sensitive data
 appsettings.json
 
+# C++ Trainer builds
+trainer/build/
+trainer/*.dll
+trainer/*.exe
+
 # Editor/IDE
 # .idea/
 # .vscode/
