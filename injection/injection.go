@@ -4,6 +4,7 @@
 package injection
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"syscall"
@@ -40,8 +41,17 @@ func InjectDLL(processID uint32, dllPath string) error {
 	}
 	defer closeHandle(hProcess)
 
-	// 2. Allocate memory in target process for DLL path
-	dllPathBytes := append([]byte(dllPath), 0) // Null-terminated string
+	// 2. Allocate memory in target process for DLL path (UTF-16 encoded)
+	dllPathUTF16, err := syscall.UTF16FromString(dllPath)
+	if err != nil {
+		return fmt.Errorf("failed to convert DLL path to UTF-16: %v", err)
+	}
+
+	dllPathBytes := make([]byte, len(dllPathUTF16)*2)
+	for i, v := range dllPathUTF16 {
+		binary.LittleEndian.PutUint16(dllPathBytes[i*2:], uint16(v))
+	}
+
 	remoteMem, err := virtualAllocEx(hProcess, 0, len(dllPathBytes), MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if err != nil {
 		return fmt.Errorf("failed to allocate memory: %v", err)
@@ -53,18 +63,18 @@ func InjectDLL(processID uint32, dllPath string) error {
 		return fmt.Errorf("failed to write DLL path: %v", err)
 	}
 
-	// 4. Get address of LoadLibraryA
+	// 4. Get address of LoadLibraryW
 	hKernel32, err := getModuleHandle("kernel32.dll")
 	if err != nil {
 		return fmt.Errorf("failed to get kernel32 handle: %v", err)
 	}
 
-	loadLibraryAddr, err := getProcAddress(hKernel32, "LoadLibraryA")
+	loadLibraryAddr, err := getProcAddress(hKernel32, "LoadLibraryW")
 	if err != nil {
-		return fmt.Errorf("failed to get LoadLibraryA address: %v", err)
+		return fmt.Errorf("failed to get LoadLibraryW address: %v", err)
 	}
 
-	// 5. Create remote thread to call LoadLibraryA
+	// 5. Create remote thread to call LoadLibraryW
 	hThread, err := createRemoteThread(hProcess, 0, 0, loadLibraryAddr, remoteMem, 0, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create remote thread: %v", err)
@@ -81,24 +91,19 @@ func InjectDLL(processID uint32, dllPath string) error {
 		return fmt.Errorf("failed to get thread exit code")
 	}
 
-	// Exit code is the return value of LoadLibraryA (HMODULE handle)
+	// Exit code is the return value of LoadLibraryW (HMODULE handle)
 	// If it's 0, the DLL failed to load
 	if exitCode == 0 {
-		// Try to get more info - check if file exists and is readable
-		if _, err := syscall.UTF16PtrFromString(dllPath); err != nil {
-			return fmt.Errorf("DLL path contains invalid characters: %s", dllPath)
-		}
-
 		return dllLoadError(dllPath)
 	}
 
 	return nil
 }
 
-// dllLoadError returns a detailed error when LoadLibraryA fails to load the DLL.
+// dllLoadError returns a detailed error when LoadLibraryW fails to load the DLL.
 func dllLoadError(dllPath string) error {
 	return fmt.Errorf(
-		"LoadLibraryA returned NULL - DLL failed to load. Possible causes:\n"+
+		"LoadLibraryW returned NULL - DLL failed to load. Possible causes:\n"+
 			"  1. Architecture mismatch (DLL is 32-bit, game might be 64-bit or vice versa)\n"+
 			"  2. Missing dependencies (use Dependency Walker to check)\n"+
 			"  3. DLL is blocked by Windows (right-click DLL -> Properties -> Unblock)\n"+
