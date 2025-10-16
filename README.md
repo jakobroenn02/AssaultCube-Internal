@@ -1,83 +1,60 @@
-# TUI App - Refactored Structure
+# Assault Cube Loader TUI
 
-A Terminal User Interface (TUI) application built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and MySQL.
+A cross-platform Bubble Tea interface for authenticating users, validating local Assault Cube installs, and launching the Windows trainer DLL that ships with this repository. The loader is written in Go with MySQL persistence, while the `trainer/` directory contains the C++ game trainer that is injected once the game launches successfully.
 
-## Project Structure
+## Key Features
+
+### Loader (Go)
+- Account lifecycle: register, log in, and reset passwords against the `users` table with bcrypt hashing for storage and comparisons.【F:views/register.go†L1-L180】【F:views/login.go†L1-L200】【F:views/resetpassword.go†L1-L202】
+- Post-login dashboard that keeps track of the signed-in user and routes to game actions or logout.【F:views/dashboard.go†L1-L120】
+- Assault Cube discovery, checksum validation, and DLL injection that wraps Windows process launching utilities from the `injection` package.【F:views/loadassaultcube.go†L1-L310】【F:injection/launcher.go†L1-L160】
+- Shared Lipgloss styling for a consistent terminal experience with keyboard-driven navigation across views.【F:views/styles.go†L1-L200】
+
+### Trainer (C++)
+- Hook library (`actrainer.dll`) with toggles for God Mode, Infinite Ammo, No Recoil, and other actions triggered by in-game hotkeys.【F:trainer/README.md†L5-L34】
+- Build scripts and CMake configuration for compiling the DLL on Windows before placing it at `trainer/actrainer.dll` for the loader to inject.【F:trainer/README.md†L36-L80】
+
+## Project Layout
 
 ```
-go_project/
-├── main.go           # Application entry point and orchestration
-├── db.go             # Database connection and initialization
-├── config.go         # Configuration loading and management
-├── appsettings.json  # Configuration file (gitignored)
-├── appsettings.example.json  # Example configuration template
-├── views/            # View components package
-│   ├── types.go      # Common types and interfaces
-│   ├── styles.go     # Lipgloss styling definitions
-│   ├── menu.go       # Main menu view
-│   ├── login.go      # Login view
-│   └── register.go   # Registration view
-├── go.mod            # Go module dependencies
-└── go.sum            # Go module checksums
+tuiapp/
+├── main.go               # Bubble Tea program orchestration
+├── config.go             # appsettings.json loader and DSN builder
+├── db.go                 # MySQL connection pool management
+├── appsettings.example.json
+├── views/                # Individual TUI screens
+│   ├── menu.go
+│   ├── login.go
+│   ├── register.go
+│   ├── dashboard.go
+│   ├── loadassaultcube.go
+│   ├── resetpassword.go
+│   └── styles.go
+├── injection/            # Windows process launch & DLL injection helpers
+├── trainer/              # C++ trainer source and build scripts
+├── tools/                # Utility Go programs (checksum helper, etc.)
+└── profile/              # Runtime logs and diagnostics
 ```
 
-## Architecture Overview
+## Prerequisites
 
-### Main Application (`main.go`)
-- **Purpose**: High-level orchestration and initialization
-- **Responsibilities**:
-  - Database initialization
-  - Terminal setup
-  - View state management
-  - Routing between different views
-  - Global keyboard shortcuts (quit, back to menu)
+### Loader
+- Go 1.25+ (module target shown in `go.mod`).【F:go.mod†L1-L27】
+- MySQL 8.0+ with a database the loader can connect to.
+- Terminal that supports ANSI colors.
+- Windows is required for the injection flow because the launcher relies on Win32 APIs; other platforms can still run the TUI for development.
 
-### Database Layer (`db.go`)
-- **Purpose**: Database connection management
-- **Responsibilities**:
-  - Initialize MySQL connection
-  - Expose global `DB` instance
-  - Handle connection cleanup
+### Trainer
+- Windows with Visual Studio 2019/2022 and CMake 3.15+ to build the DLL.【F:trainer/README.md†L36-L63】
 
-### Views Package (`views/`)
-Each view is a self-contained component with its own:
-- **Model**: State management for the view
-- **Update**: Input handling and business logic
-- **View**: Rendering logic
-- **Reset**: State cleanup when switching views
+## Database Setup
 
-#### `types.go`
-- Defines `ViewType` enum (Menu, Login, Register)
-- `ViewTransition` for navigation between views
-- Helper functions for view transitions
-
-#### `menu.go`
-- Main menu with navigation
-- Handles selection between Login and Register
-- Clean, focused responsibility
-
-#### `register.go`
-- Complete registration form with validation
-- Password hashing with bcrypt
-- Database insertion
-- Error handling and success states
-
-#### `login.go`
-- Login form (TODO: implementation)
-- Will handle authentication
-
-## Benefits of This Structure
-
-1. **Separation of Concerns**: Each file has a clear, single responsibility
-2. **Testability**: Views can be tested independently
-3. **Maintainability**: Easy to find and modify specific features
-4. **Extensibility**: Adding new views is straightforward
-5. **Reusability**: Views can be reused or composed
-6. **Clean Main**: `main.go` focuses on initialization and orchestration
-
-## Database Schema
+Create the schema and table expected by the loader:
 
 ```sql
+CREATE DATABASE tuiapp;
+USE tuiapp;
+
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(255) NOT NULL UNIQUE,
@@ -88,70 +65,95 @@ CREATE TABLE users (
 
 ## Configuration
 
-The application uses a JSON configuration file for settings including database credentials.
-
-### Setup Configuration
-
-1. Copy the example configuration file:
+1. Copy the example settings and update them with your MySQL credentials:
    ```bash
    cp appsettings.example.json appsettings.json
    ```
+2. Fill in the database section; the loader parses it through `LoadConfig` and builds a DSN with sensible defaults for timeouts.【F:config.go†L1-L70】
+3. Keep `appsettings.json` out of version control—only the example file is committed.
 
-2. Edit `appsettings.json` with your database credentials:
-   ```json
-   {
-     "database": {
-       "host": "localhost",
-       "port": 3306,
-       "user": "root",
-       "password": "your_password_here",
-       "database": "tuiapp"
-     },
-     "app": {
-       "name": "TUI App",
-       "version": "1.0.0"
-     }
-   }
-   ```
+Example configuration:
 
-**Note**: The `appsettings.json` file is excluded from version control to protect sensitive credentials. Always use `appsettings.example.json` as a template.
-
-## Running the Application
-
-```bash
-# Build
-go build
-
-# Run
-./go-project
+```json
+{
+  "database": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "tuiapp",
+    "password": "your_password",
+    "database": "tuiapp"
+  },
+  "app": {
+    "name": "TUI App",
+    "version": "1.0.0"
+  }
+}
 ```
 
-## Navigation
+## Building the Trainer DLL
 
-- **Arrow Keys / j/k**: Navigate menu items and form fields
-- **Tab**: Move between form fields
-- **Enter**: Select menu item or submit form
-- **Esc**: Return to main menu
-- **q / Ctrl+C**: Quit application
+1. Open PowerShell in `trainer/` on Windows.
+2. Build the DLL using the provided script or CMake commands:
+   ```powershell
+   .\build.ps1
+   # or
+   mkdir build
+   cd build
+   cmake .. -G "Visual Studio 17 2022" -A Win32
+   cmake --build . --config Release
+   ```
+3. Copy the resulting `actrainer.dll` (found in `trainer/build/lib/Release/`) to `trainer/actrainer.dll`. The loader checks that path before launching the game.【F:views/loadassaultcube.go†L1-L160】
 
-## Adding New Views
+## Running the Loader
 
-To add a new view:
+```bash
+go run .
+# or build a binary
+go build -o tuiapp
+./tuiapp   # Linux/macOS development (no injection)
+```
 
-1. Create a new file in `views/` (e.g., `views/profile.go`)
-2. Define your model struct with state
-3. Implement `Update()`, `View()`, and `Reset()` methods
-4. Add your view type to `types.go`
-5. Update `main.go` to handle the new view in:
-   - `model` struct (add your view's model)
-   - `initialModel()` (initialize your view)
-   - `Update()` (route to your view's update)
-   - `View()` (route to your view's render)
+On Windows, run `tuiapp.exe` from a terminal. The program clears the console, loads configuration, opens the MySQL pool, and starts the Bubble Tea program.【F:main.go†L1-L160】
 
-## Dependencies
+## TUI Flow & Controls
 
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI framework
-- [Lipgloss](https://github.com/charmbracelet/lipgloss) - Terminal styling
-- [Bubbles](https://github.com/charmbracelet/bubbles) - TUI components (text input, etc.)
-- [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) - MySQL driver
-- [bcrypt](https://pkg.go.dev/golang.org/x/crypto/bcrypt) - Password hashing
+### Global
+- `q` or `Ctrl+C`: quit the application.
+- `esc`: navigate backwards (logout from dashboard, return to menu, etc.).【F:main.go†L32-L160】
+
+### Menu
+- Use arrow keys or `j/k` to move between **Login** and **Register**, `Enter` to select.【F:views/menu.go†L1-L160】
+
+### Login & Register
+- `Tab` / `Shift+Tab` / `Up` / `Down`: change focused field.
+- `Enter`: submit when the button is focused. Errors are displayed inline if validation fails or credentials are wrong.【F:views/login.go†L1-L200】【F:views/register.go†L1-L200】
+
+### Dashboard
+- Choose **Load Assault Cube**, **Reset Password**, or **Logout** with arrow keys and `Enter`. Logging out clears session state before returning to the main menu.【F:views/dashboard.go†L1-L120】【F:main.go†L40-L160】
+
+### Load Assault Cube
+- `Enter` or `l`: scan common installation paths for `ac_client.exe` and verify a SHA-256 checksum against `knownVersions`.
+- `s`: launch the game and inject the trainer when a valid executable is found. Status, errors, and trainer hotkeys are rendered in the view.【F:views/loadassaultcube.go†L1-L310】
+
+### Reset Password
+- `Tab` / `Shift+Tab` / arrow keys: switch between password inputs.
+- `Enter`: submit the reset once the button is focused. The model validates the current password, enforces a minimum length, and writes the new hash back to MySQL.【F:views/resetpassword.go†L1-L202】
+
+## Updating Known Game Versions
+
+The loader ships with placeholder checksums. Use the checksum helper to add real versions:
+
+```bash
+cd tools
+go run checksumtool.go "C:\\Path\\To\\ac_client.exe"
+```
+
+Copy the SHA-256 value into the `knownVersions` map near the top of `views/loadassaultcube.go`.【F:views/loadassaultcube.go†L1-L80】
+
+## Logs & Diagnostics
+
+The loader prints connection attempts when initializing MySQL and will surface detailed errors if configuration or authentication fails, helping diagnose issues quickly.【F:db.go†L1-L60】【F:views/login.go†L140-L200】
+
+## Legal Notice
+
+This project is provided for educational use. Only inject the trainer into games you own, preferably offline or in controlled environments, and respect the terms of the game you are modifying.【F:trainer/README.md†L96-L122】
