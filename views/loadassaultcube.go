@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"go-project/injection"
+	"go-project/ipc"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,6 +22,95 @@ var knownVersions = map[string]string{
 	// Add more versions as needed
 }
 
+// Helper functions for formatting
+func formatStatValue(value int) string {
+	if value > 0 {
+		return SuccessStyle.Render(fmt.Sprintf("%d", value))
+	}
+	return ErrorStyle.Render(fmt.Sprintf("%d", value))
+}
+
+func formatFeatureStatus(enabled bool) string {
+	if enabled {
+		return SuccessStyle.Render("ON")
+	}
+	return HelpStyle.Render("OFF")
+}
+
+// Message types for IPC updates
+type trainerStatusMsg struct {
+	health       int
+	armor        int
+	ammo         int
+	godMode      bool
+	infiniteAmmo bool
+	noRecoil     bool
+}
+
+type trainerLogMsg struct {
+	message string
+}
+
+type trainerConnectedMsg struct {
+	client *ipc.PipeClient
+}
+
+// listenToPipe reads messages from the trainer and sends them as tea.Msg
+func listenToPipe() tea.Cmd {
+	return func() tea.Msg {
+		// Try to connect to the pipe
+		_, err := ipc.Connect(10 * time.Second)
+		if err != nil {
+			return trainerLogMsg{message: fmt.Sprintf("Failed to connect to trainer: %v", err)}
+		}
+
+		// Signal that we're connected
+		return trainerConnectedMsg{}
+	}
+}
+
+// readPipeMessages continuously reads messages from the pipe
+func readPipeMessages(client *ipc.PipeClient) tea.Cmd {
+	return func() tea.Msg {
+		msg, err := client.ReadMessage()
+		if err != nil {
+			return trainerLogMsg{message: fmt.Sprintf("Pipe error: %v", err)}
+		}
+
+		// Handle different message types
+		switch msg.Type {
+		case ipc.MsgTypeStatus:
+			if status, ok := msg.Payload.(ipc.StatusPayload); ok {
+				return trainerStatusMsg{
+					health:       status.Health,
+					armor:        status.Armor,
+					ammo:         status.Ammo,
+					godMode:      status.GodMode,
+					infiniteAmmo: status.InfiniteAmmo,
+					noRecoil:     status.NoRecoil,
+				}
+			}
+
+		case ipc.MsgTypeLog:
+			if log, ok := msg.Payload.(ipc.LogPayload); ok {
+				return trainerLogMsg{message: fmt.Sprintf("[%s] %s", log.Level, log.Message)}
+			}
+
+		case ipc.MsgTypeError:
+			if errPayload, ok := msg.Payload.(ipc.ErrorPayload); ok {
+				return trainerLogMsg{message: fmt.Sprintf("ERROR: %s", errPayload.Message)}
+			}
+
+		case ipc.MsgTypeInit:
+			if init, ok := msg.Payload.(ipc.InitPayload); ok {
+				return trainerLogMsg{message: fmt.Sprintf("Trainer v%s initialized", init.Version)}
+			}
+		}
+
+		return nil
+	}
+}
+
 // LoadAssaultCubeModel represents the assault cube loader view
 type LoadAssaultCubeModel struct {
 	Username      string
@@ -34,6 +124,19 @@ type LoadAssaultCubeModel struct {
 	Launching     bool
 	Injected      bool
 	DLLPath       string
+
+	// Real-time trainer data (from IPC)
+	Health       int
+	Armor        int
+	Ammo         int
+	GodMode      bool
+	InfiniteAmmo bool
+	NoRecoil     bool
+	TrainerLogs  []string
+	Connected    bool
+
+	// IPC connection
+	pipeClient *ipc.PipeClient
 }
 
 // NewLoadAssaultCubeModel creates a new assault cube loader model
@@ -54,11 +157,64 @@ func NewLoadAssaultCubeModel(username string) LoadAssaultCubeModel {
 		Launching:     false,
 		Injected:      false,
 		DLLPath:       absPath,
+		Health:        0,
+		Armor:         0,
+		Ammo:          0,
+		GodMode:       false,
+		InfiniteAmmo:  false,
+		NoRecoil:      false,
+		TrainerLogs:   make([]string, 0),
+		Connected:     false,
 	}
 }
 
-// Update handles assault cube loader input
-func (m LoadAssaultCubeModel) Update(msg tea.KeyMsg) (LoadAssaultCubeModel, tea.Cmd, ViewTransition) {
+// Update handles all messages (keyboard input and IPC updates)
+func (m LoadAssaultCubeModel) Update(msg tea.Msg) (LoadAssaultCubeModel, tea.Cmd, ViewTransition) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		return m.handleKeyPress(msg)
+
+	case trainerConnectedMsg:
+		// Pipe connected! Start reading messages
+		m.Connected = true
+		m.pipeClient = msg.client
+		m.TrainerLogs = append(m.TrainerLogs, "Connected to trainer")
+		return m, UpdateFromPipe(m.pipeClient), NoTransition()
+
+	case trainerStatusMsg:
+		// Update stats from trainer
+		m.Health = msg.health
+		m.Armor = msg.armor
+		m.Ammo = msg.ammo
+		m.GodMode = msg.godMode
+		m.InfiniteAmmo = msg.infiniteAmmo
+		m.NoRecoil = msg.noRecoil
+
+		// Continue reading from pipe
+		if m.pipeClient != nil {
+			return m, UpdateFromPipe(m.pipeClient), NoTransition()
+		}
+
+	case trainerLogMsg:
+		// Add log message
+		m.TrainerLogs = append(m.TrainerLogs, msg.message)
+
+		// Keep only last 10 logs
+		if len(m.TrainerLogs) > 10 {
+			m.TrainerLogs = m.TrainerLogs[len(m.TrainerLogs)-10:]
+		}
+
+		// Continue reading from pipe
+		if m.pipeClient != nil {
+			return m, UpdateFromPipe(m.pipeClient), NoTransition()
+		}
+	}
+
+	return m, nil, NoTransition()
+}
+
+// handleKeyPress handles keyboard input
+func (m LoadAssaultCubeModel) handleKeyPress(msg tea.KeyMsg) (LoadAssaultCubeModel, tea.Cmd, ViewTransition) {
 	switch msg.String() {
 	case "enter", "l":
 		// Trigger game search and validation
@@ -67,6 +223,10 @@ func (m LoadAssaultCubeModel) Update(msg tea.KeyMsg) (LoadAssaultCubeModel, tea.
 		// Launch game (only if valid)
 		if m.GameFound {
 			m = m.LaunchAndInject()
+			// Start IPC connection after injection
+			if m.Injected && m.Error == "" {
+				return m, StartIPCConnection, NoTransition()
+			}
 		} else {
 			m.Error = "Cannot launch - game not found"
 		}
@@ -128,7 +288,62 @@ func (m LoadAssaultCubeModel) View() string {
 		if m.Injected {
 			s.WriteString(SuccessStyle.Render("✓ Trainer Active!"))
 			s.WriteString("\n\n")
-			s.WriteString("Game is running with trainer injected.\n")
+
+			// Show connection status
+			if m.Connected {
+				s.WriteString(SuccessStyle.Render("✓ Connected to Trainer"))
+				s.WriteString("\n\n")
+
+				// Real-time stats
+				s.WriteString(SubtitleStyle.Render("=== Live Stats ==="))
+				s.WriteString("\n")
+				s.WriteString(fmt.Sprintf("Health: %s\n", formatStatValue(m.Health)))
+				s.WriteString(fmt.Sprintf("Armor:  %s\n", formatStatValue(m.Armor)))
+				s.WriteString(fmt.Sprintf("Ammo:   %s\n", formatStatValue(m.Ammo)))
+				s.WriteString("\n")
+
+				// Feature status
+				s.WriteString(SubtitleStyle.Render("=== Features ==="))
+				s.WriteString("\n")
+				s.WriteString(fmt.Sprintf("God Mode:      %s\n", formatFeatureStatus(m.GodMode)))
+				s.WriteString(fmt.Sprintf("Infinite Ammo: %s\n", formatFeatureStatus(m.InfiniteAmmo)))
+				s.WriteString(fmt.Sprintf("No Recoil:     %s\n", formatFeatureStatus(m.NoRecoil)))
+				s.WriteString("\n")
+
+				// Recent logs
+				if len(m.TrainerLogs) > 0 {
+					s.WriteString(SubtitleStyle.Render("=== Recent Activity ==="))
+					s.WriteString("\n")
+					// Show last 5 logs
+					start := 0
+					if len(m.TrainerLogs) > 5 {
+						start = len(m.TrainerLogs) - 5
+					}
+					for i := start; i < len(m.TrainerLogs); i++ {
+						s.WriteString(fmt.Sprintf("• %s\n", m.TrainerLogs[i]))
+					}
+					s.WriteString("\n")
+				}
+			} else {
+				s.WriteString(SubtitleStyle.Render("⏳ Waiting for trainer connection..."))
+				s.WriteString("\n\n")
+
+				// Show connection errors if any
+				if len(m.TrainerLogs) > 0 {
+					s.WriteString(ErrorStyle.Render("Connection Logs:"))
+					s.WriteString("\n")
+					// Show last 5 logs
+					start := 0
+					if len(m.TrainerLogs) > 5 {
+						start = len(m.TrainerLogs) - 5
+					}
+					for i := start; i < len(m.TrainerLogs); i++ {
+						s.WriteString(fmt.Sprintf("• %s\n", m.TrainerLogs[i]))
+					}
+					s.WriteString("\n")
+				}
+			}
+
 			s.WriteString("Use hotkeys in-game:\n")
 			s.WriteString("  F1  - God Mode\n")
 			s.WriteString("  F2  - Infinite Ammo\n")
@@ -311,7 +526,7 @@ func (m LoadAssaultCubeModel) LaunchAndInject() LoadAssaultCubeModel {
 		return m
 	}
 
-	// Give the DLL a moment to initialize
+	// Give the DLL a moment to initialize and create the pipe
 	time.Sleep(500 * time.Millisecond)
 
 	m.Status = "✓ Trainer injected successfully!"
@@ -319,4 +534,59 @@ func (m LoadAssaultCubeModel) LaunchAndInject() LoadAssaultCubeModel {
 	m.Launching = false
 
 	return m
+}
+
+// StartIPCConnection initiates the connection to the trainer's named pipe
+// This should be called as a tea.Cmd after successful injection
+func StartIPCConnection() tea.Msg {
+	// Try to connect to the pipe (with timeout)
+	client, err := ipc.Connect(10 * time.Second)
+	if err != nil {
+		return trainerLogMsg{message: fmt.Sprintf("Failed to connect to trainer: %v", err)}
+	}
+
+	// Connection successful!
+	return trainerConnectedMsg{client: client}
+}
+
+// UpdateFromPipe reads a message from the pipe and returns it as a tea.Msg
+func UpdateFromPipe(client *ipc.PipeClient) tea.Cmd {
+	return func() tea.Msg {
+		msg, err := client.ReadMessage()
+		if err != nil {
+			return trainerLogMsg{message: fmt.Sprintf("Pipe disconnected: %v", err)}
+		}
+
+		// Handle different message types
+		switch msg.Type {
+		case ipc.MsgTypeStatus:
+			if status, ok := msg.Payload.(ipc.StatusPayload); ok {
+				return trainerStatusMsg{
+					health:       status.Health,
+					armor:        status.Armor,
+					ammo:         status.Ammo,
+					godMode:      status.GodMode,
+					infiniteAmmo: status.InfiniteAmmo,
+					noRecoil:     status.NoRecoil,
+				}
+			}
+
+		case ipc.MsgTypeLog:
+			if log, ok := msg.Payload.(ipc.LogPayload); ok {
+				return trainerLogMsg{message: fmt.Sprintf("[%s] %s", log.Level, log.Message)}
+			}
+
+		case ipc.MsgTypeError:
+			if errPayload, ok := msg.Payload.(ipc.ErrorPayload); ok {
+				return trainerLogMsg{message: fmt.Sprintf("ERROR: %s", errPayload.Message)}
+			}
+
+		case ipc.MsgTypeInit:
+			if init, ok := msg.Payload.(ipc.InitPayload); ok {
+				return trainerLogMsg{message: fmt.Sprintf("Trainer v%s initialized", init.Version)}
+			}
+		}
+
+		return nil
+	}
 }

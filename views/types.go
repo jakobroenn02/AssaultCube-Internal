@@ -38,6 +38,6 @@ func NoTransition() ViewTransition {
 // View is an interface that all views must implement
 type View interface {
 	View() string
-	Update(msg tea.KeyMsg) (View, tea.Cmd, ViewTransition)
+	Update(msg tea.Msg) (View, tea.Cmd, ViewTransition)
 	Reset() View
 }

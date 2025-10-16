@@ -18,9 +18,34 @@ void LogToFile(const std::string& message) {
     }
 }
 
+// Clear console using Windows API (better than system("cls"))
+void ClearConsole() {
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    DWORD cellCount;
+    DWORD count;
+    COORD homeCoords = { 0, 0 };
+    
+    if (hConsole == INVALID_HANDLE_VALUE) return;
+    
+    // Get console size
+    if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) return;
+    cellCount = csbi.dwSize.X * csbi.dwSize.Y;
+    
+    // Fill console with spaces
+    if (!FillConsoleOutputCharacter(hConsole, (TCHAR)' ', cellCount, homeCoords, &count)) return;
+    
+    // Fill attributes
+    if (!FillConsoleOutputAttribute(hConsole, csbi.wAttributes, cellCount, homeCoords, &count)) return;
+    
+    // Move cursor to top-left
+    SetConsoleCursorPosition(hConsole, homeCoords);
+}
+
 Trainer::Trainer(uintptr_t base) 
     : moduleBase(base),
       isRunning(true),
+      pipeLogger(nullptr),
       godMode(false),
       infiniteAmmo(false),
       noRecoil(false),
@@ -31,13 +56,31 @@ Trainer::Trainer(uintptr_t base)
 }
 
 Trainer::~Trainer() {
+    // Clean up pipe logger
+    if (pipeLogger) {
+        delete pipeLogger;
+        pipeLogger = nullptr;
+    }
     // Restore original bytes if needed
     // Clean up any patches
 }
 
 bool Trainer::Initialize() {
+#ifdef _DEBUG
     std::cout << "Initializing trainer..." << std::endl;
+#endif
     LogToFile("=== TRAINER INITIALIZING ===");
+    
+    // Initialize pipe logger
+    pipeLogger = new PipeLogger();
+    if (pipeLogger->Initialize()) {
+        pipeLogger->SendLog("info", "Trainer initializing...");
+    } else {
+#ifdef _DEBUG
+        std::cout << "WARNING: Failed to initialize pipe logger (TUI not connected)" << std::endl;
+#endif
+        LogToFile("WARNING: Pipe logger initialization failed");
+    }
     
     // Read LocalPlayer pointer from ac_client.exe + 0x0017E0A8
     playerBase = Memory::Read<uintptr_t>(moduleBase + 0x0017E0A8);
@@ -49,12 +92,20 @@ bool Trainer::Initialize() {
     LogToFile(buffer);
     
     if (playerBase == 0) {
+#ifdef _DEBUG
         std::cout << "ERROR: Failed to read player base from 0x" << std::hex << (moduleBase + 0x0017E0A8) << std::dec << std::endl;
+#endif
         LogToFile("ERROR: Player base is NULL!");
+        
+        if (pipeLogger && pipeLogger->IsConnected()) {
+            pipeLogger->SendError(1, "Failed to read player base - pointer is NULL");
+        }
         return false;
     }
     
+#ifdef _DEBUG
     std::cout << "Player base found at: 0x" << std::hex << playerBase << std::dec << std::endl;
+#endif
     
     // Calculate addresses using found offsets
     healthAddress = playerBase + 0xEC;  // Health Value
@@ -68,9 +119,11 @@ bool Trainer::Initialize() {
     sprintf_s(buffer, "Ammo Address: 0x%08X", ammoAddress);
     LogToFile(buffer);
     
+#ifdef _DEBUG
     std::cout << "Health address: 0x" << std::hex << healthAddress << std::dec << std::endl;
     std::cout << "Armor address: 0x" << std::hex << armorAddress << std::dec << std::endl;
     std::cout << "Ammo address: 0x" << std::hex << ammoAddress << std::dec << std::endl;
+#endif
     
     // Read and display current values to verify addresses are correct
     int currentHealth = Memory::Read<int>(healthAddress);
@@ -84,18 +137,33 @@ bool Trainer::Initialize() {
     sprintf_s(buffer, "Current Ammo: %d", currentAmmo);
     LogToFile(buffer);
     
+#ifdef _DEBUG
     std::cout << "\nCurrent values:" << std::endl;
     std::cout << "  Health: " << currentHealth << std::endl;
     std::cout << "  Armor: " << currentArmor << std::endl;
     std::cout << "  Ammo: " << currentAmmo << std::endl;
     
     std::cout << "\nTrainer initialized successfully!" << std::endl;
+#endif
     LogToFile("=== TRAINER READY ===\n");
+    
+    // Send initialization message to TUI
+    if (pipeLogger && pipeLogger->IsConnected()) {
+        pipeLogger->SendInit(moduleBase, playerBase, "1.0.0", true);
+        pipeLogger->SendLog("info", "Trainer initialized successfully!");
+        pipeLogger->SendStatus(currentHealth, currentArmor, currentAmmo, false, false, false);
+    }
+    
     return true;
 }
 
 void Trainer::Run() {
+#ifdef _DEBUG
     std::cout << "\nTrainer is running...\n" << std::endl;
+#endif
+    
+    int statusCounter = 0;
+    const int STATUS_UPDATE_INTERVAL = 100; // Send status every 100 iterations (~1 second)
     
     while (isRunning) {
         // Check for hotkeys
@@ -113,12 +181,26 @@ void Trainer::Run() {
         }
         if (GetAsyncKeyState(VK_END) & 1) {
             isRunning = false;
+            if (pipeLogger && pipeLogger->IsConnected()) {
+                pipeLogger->SendLog("info", "Trainer shutting down...");
+            }
             break;
         }
         
         // Update player data if features are active
         if (godMode || infiniteAmmo) {
             UpdatePlayerData();
+        }
+        
+        // Send periodic status updates to TUI
+        statusCounter++;
+        if (statusCounter >= STATUS_UPDATE_INTERVAL && pipeLogger && pipeLogger->IsConnected()) {
+            int health = healthAddress ? Memory::Read<int>(healthAddress) : 0;
+            int armor = armorAddress ? Memory::Read<int>(armorAddress) : 0;
+            int ammo = ammoAddress ? Memory::Read<int>(ammoAddress) : 0;
+            
+            pipeLogger->SendStatus(health, armor, ammo, godMode, infiniteAmmo, noRecoil);
+            statusCounter = 0;
         }
         
         // Sleep to reduce CPU usage
@@ -135,6 +217,11 @@ void Trainer::ToggleGodMode() {
     std::cout << "God Mode: " << (godMode ? "ON" : "OFF") << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout.flush();
+    
+    // Send to TUI
+    if (pipeLogger && pipeLogger->IsConnected()) {
+        pipeLogger->SendLog("info", godMode ? "God Mode enabled" : "God Mode disabled");
+    }
     
     if (godMode && healthAddress) {
         // Read current values first
@@ -174,6 +261,11 @@ void Trainer::ToggleInfiniteAmmo() {
     std::cout << "========================================" << std::endl;
     std::cout.flush();
     
+    // Send to TUI
+    if (pipeLogger && pipeLogger->IsConnected()) {
+        pipeLogger->SendLog("info", infiniteAmmo ? "Infinite Ammo enabled" : "Infinite Ammo disabled");
+    }
+    
     if (infiniteAmmo && ammoAddress) {
         int currentAmmo = Memory::Read<int>(ammoAddress);
         std::cout << "  Current Ammo: " << currentAmmo << std::endl;
@@ -192,6 +284,11 @@ void Trainer::ToggleNoRecoil() {
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
     std::cout << "========================================\n" << std::endl;
     std::cout.flush();
+    
+    // Send to TUI
+    if (pipeLogger && pipeLogger->IsConnected()) {
+        pipeLogger->SendLog("info", noRecoil ? "No Recoil enabled" : "No Recoil disabled");
+    }
     
     // This would require patching recoil-related instructions
     // Need to find the recoil code in the game
@@ -222,8 +319,14 @@ void Trainer::SetArmor(int value) {
 }
 
 void Trainer::SetAmmo(int value) {
-    if (ammoAddress) {
-        Memory::Write<int>(ammoAddress, value);
+    if (playerBase) {
+        // Set ammo for ALL weapon types
+        Memory::Write<int>(playerBase + OFFSET_AR_AMMO, value);        // Assault Rifle
+        Memory::Write<int>(playerBase + OFFSET_SMG_AMMO, value);       // Submachine Gun
+        Memory::Write<int>(playerBase + OFFSET_SNIPER_AMMO, value);    // Sniper
+        Memory::Write<int>(playerBase + OFFSET_SHOTGUN_AMMO, value);   // Shotgun
+        Memory::Write<int>(playerBase + OFFSET_PISTOL_AMMO, value);    // Pistol
+        Memory::Write<int>(playerBase + OFFSET_GRENADE_AMMO, value);   // Grenades
     }
 }
 
@@ -272,7 +375,7 @@ void Trainer::UpdatePlayerData() {
 }
 
 void Trainer::DisplayStatus() {
-    system("cls");
+    ClearConsole();
     std::cout << "=== Assault Cube Trainer ===" << std::endl;
     std::cout << "Module Base: 0x" << std::hex << moduleBase << std::dec << std::endl;
     std::cout << "\nStatus:" << std::endl;

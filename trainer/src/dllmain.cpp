@@ -20,20 +20,26 @@ void CreateDebugConsole() {
 
 // Main thread that runs the trainer
 DWORD WINAPI MainThread(LPVOID lpParameter) {
-    // Create console for debugging (optional - can be removed for stealth)
+#ifdef _DEBUG
+    // Create console for debugging (only in debug builds)
     CreateDebugConsole();
     
     std::cout << "=== Assault Cube Trainer ===" << std::endl;
     std::cout << "Initializing..." << std::endl;
+#endif
     
     // Get module base address
     uintptr_t moduleBase = (uintptr_t)GetModuleHandle(NULL);
+    
+#ifdef _DEBUG
     std::cout << "Module Base: 0x" << std::hex << moduleBase << std::dec << std::endl;
+#endif
     
     // Initialize trainer
     Trainer* trainer = new Trainer(moduleBase);
     
     if (trainer->Initialize()) {
+#ifdef _DEBUG
         std::cout << "Trainer initialized successfully!" << std::endl;
         std::cout << "\n=== Controls ===" << std::endl;
         std::cout << "F1  - Toggle God Mode" << std::endl;
@@ -41,21 +47,28 @@ DWORD WINAPI MainThread(LPVOID lpParameter) {
         std::cout << "F3  - Toggle No Recoil" << std::endl;
         std::cout << "F4  - Add 1000 Health" << std::endl;
         std::cout << "END - Exit Trainer" << std::endl;
+#endif
         
         // Main loop
         trainer->Run();
         
+#ifdef _DEBUG
         std::cout << "Trainer shutting down..." << std::endl;
+#endif
     } else {
+#ifdef _DEBUG
         std::cout << "Failed to initialize trainer!" << std::endl;
+#endif
     }
     
     delete trainer;
     
+#ifdef _DEBUG
     // Cleanup
     std::cout << "Press any key to exit..." << std::endl;
     std::cin.get();
     FreeConsole();
+#endif
     
     // Eject DLL
     FreeLibraryAndExitThread((HMODULE)lpParameter, 0);
@@ -65,8 +78,10 @@ DWORD WINAPI MainThread(LPVOID lpParameter) {
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     switch (dwReason) {
     case DLL_PROCESS_ATTACH:
-        // Show immediate message box to confirm DLL loaded
+#ifdef _DEBUG
+        // Show message box only in debug builds
         MessageBoxA(NULL, "DLL Injected! Press OK to start trainer.", "Assault Cube Trainer", MB_OK | MB_ICONINFORMATION);
+#endif
         
         // Disable DLL_THREAD_ATTACH and DLL_THREAD_DETACH notifications
         DisableThreadLibraryCalls(hModule);

@@ -4,34 +4,105 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"runtime"
+	"syscall"
+	"unsafe"
 
+	"go-project/injection"
 	"go-project/views"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// clearScreen clears the terminal screen (cross-platform)
-func clearScreen() {
-	var cmd *exec.Cmd
+var (
+	kernel32                       = syscall.NewLazyDLL("kernel32.dll")
+	procGetStdHandle               = kernel32.NewProc("GetStdHandle")
+	procGetConsoleScreenBufferInfo = kernel32.NewProc("GetConsoleScreenBufferInfo")
+	procFillConsoleOutputCharacter = kernel32.NewProc("FillConsoleOutputCharacterW")
+	procFillConsoleOutputAttribute = kernel32.NewProc("FillConsoleOutputAttribute")
+	procSetConsoleCursorPosition   = kernel32.NewProc("SetConsoleCursorPosition")
+)
 
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "cls")
-	case "darwin", "linux":
-		cmd = exec.Command("clear")
-	default:
-		// Fallback to ANSI escape codes
+const (
+	STD_OUTPUT_HANDLE = ^uintptr(10) + 1 // -11 but uintptr
+)
+
+type coord struct {
+	X int16
+	Y int16
+}
+
+type smallRect struct {
+	Left   int16
+	Top    int16
+	Right  int16
+	Bottom int16
+}
+
+type consoleScreenBufferInfo struct {
+	Size              coord
+	CursorPosition    coord
+	Attributes        uint16
+	Window            smallRect
+	MaximumWindowSize coord
+}
+
+// clearScreen clears the terminal screen using Windows API (no shell execution)
+func clearScreen() {
+	if runtime.GOOS != "windows" {
+		// Fallback to ANSI escape codes for non-Windows
 		fmt.Print("\033[2J\033[H")
 		return
 	}
 
-	cmd.Stdout = os.Stdout
-	if err := cmd.Run(); err != nil {
-		// If command fails, use ANSI escape codes as fallback
+	// Get console handle
+	handle, _, _ := procGetStdHandle.Call(STD_OUTPUT_HANDLE)
+	if handle == 0 {
+		// Fallback if we can't get handle
 		fmt.Print("\033[2J\033[H")
+		return
 	}
+
+	// Get console screen buffer info
+	var csbi consoleScreenBufferInfo
+	ret, _, _ := procGetConsoleScreenBufferInfo.Call(
+		handle,
+		uintptr(unsafe.Pointer(&csbi)),
+	)
+	if ret == 0 {
+		// Fallback if we can't get buffer info
+		fmt.Print("\033[2J\033[H")
+		return
+	}
+
+	// Calculate number of cells in the console
+	cellCount := uint32(csbi.Size.X) * uint32(csbi.Size.Y)
+
+	// Fill console with spaces
+	var written uint32
+	homeCoord := coord{X: 0, Y: 0}
+	procFillConsoleOutputCharacter.Call(
+		handle,
+		uintptr(' '),
+		uintptr(cellCount),
+		*(*uintptr)(unsafe.Pointer(&homeCoord)),
+		uintptr(unsafe.Pointer(&written)),
+	)
+
+	// Reset attributes
+	procFillConsoleOutputAttribute.Call(
+		handle,
+		uintptr(csbi.Attributes),
+		uintptr(cellCount),
+		*(*uintptr)(unsafe.Pointer(&homeCoord)),
+		uintptr(unsafe.Pointer(&written)),
+	)
+
+	// Move cursor to top-left
+	procSetConsoleCursorPosition.Call(
+		handle,
+		*(*uintptr)(unsafe.Pointer(&homeCoord)),
+	)
 }
 
 // model is the main application model that orchestrates different views
@@ -206,6 +277,9 @@ func main() {
 
 	// Clear terminal before starting TUI (cross-platform)
 	clearScreen()
+
+	// Ensure game process is terminated when application exits
+	defer injection.TerminateActiveGame()
 
 	// Start the Bubble Tea program
 	p := tea.NewProgram(initialModel())

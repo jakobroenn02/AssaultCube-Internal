@@ -1,53 +1,185 @@
-# TUI App - Refactored Structure
+# Assault Cube Trainer
 
-A Terminal User Interface (TUI) application built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and MySQL.
+A complete game trainer for Assault Cube with TUI (Terminal User Interface) loader and C++ DLL injection.
 
-## Project Structure
+## 🚀 Quick Start
+
+### Run the Trainer
+```powershell
+.\run.ps1
+```
+This will automatically build if needed and launch the trainer.
+
+### Build Manually
+```powershell
+# Build everything
+.\build.ps1
+
+# Build only Go loader
+.\build.ps1 -SkipCpp
+
+# Build only C++ trainer
+.\build.ps1 -SkipGo
+
+# Clean and rebuild
+.\build.ps1 -Clean
+```
+
+## 🎮 Features
+
+### Current Features (Phase 1)
+- ✅ User authentication (MySQL database)
+- ✅ TUI-based loader with Bubble Tea framework
+- ✅ Automatic game detection and validation
+- ✅ DLL injection into game process
+- ✅ In-game hotkeys:
+  - **F1** - God Mode (lock health/armor at 100)
+  - **F2** - Infinite Ammo
+  - **F3** - No Recoil (placeholder)
+  - **F4** - Add Health
+  - **END** - Unload Trainer
+
+### Coming Soon (Phase 2)
+- 🔨 Named pipe communication (Go ↔ C++)
+- 🔨 Real-time stats in dashboard (health, ammo, armor)
+- 🔨 Control features from TUI (not just hotkeys)
+- 🔨 Auto-detect when game closes
+- 🔨 Silent injection (no message box)
+
+## 📁 Project Structure
 
 ```
-go_project/
-├── main.go           # Application entry point and orchestration
-├── db.go             # Database connection and initialization
-├── config.go         # Configuration loading and management
-├── appsettings.json  # Configuration file (gitignored)
-├── appsettings.example.json  # Example configuration template
-├── views/            # View components package
-│   ├── types.go      # Common types and interfaces
-│   ├── styles.go     # Lipgloss styling definitions
-│   ├── menu.go       # Main menu view
-│   ├── login.go      # Login view
-│   └── register.go   # Registration view
-├── go.mod            # Go module dependencies
-└── go.sum            # Go module checksums
+tuiapp/
+├── main.go                 # Entry point
+├── config.go               # Configuration management
+├── db.go                   # Database connection
+├── build.ps1               # Build script (builds everything)
+├── run.ps1                 # Quick run script
+├── go-project-x86.exe      # 32-bit loader (generated)
+├── appsettings.json        # Configuration file (gitignored)
+│
+├── views/                  # TUI views
+│   ├── menu.go
+│   ├── login.go
+│   ├── register.go
+│   ├── dashboard.go
+│   ├── loadassaultcube.go
+│   ├── resetpassword.go
+│   ├── styles.go
+│   └── types.go
+│
+├── injection/              # DLL injection system
+│   ├── injection.go        # Core injection logic
+│   └── launcher.go         # Game launcher
+│
+└── trainer/                # C++ Trainer DLL
+    ├── src/
+    │   ├── dllmain.cpp     # DLL entry point
+    │   ├── trainer.cpp     # Trainer implementation
+    │   └── pch.cpp
+    ├── include/
+    │   ├── memory.h        # Memory manipulation utilities
+    │   ├── trainer.h       # Trainer class
+    │   └── pch.h
+    ├── addresses.md        # Memory addresses from Cheat Engine
+    ├── build_msvc.ps1      # C++ build script
+    └── actrainer.dll       # Trainer DLL (generated)
 ```
 
-## Architecture Overview
+## 🔧 Requirements
 
-### Main Application (`main.go`)
-- **Purpose**: High-level orchestration and initialization
-- **Responsibilities**:
-  - Database initialization
-  - Terminal setup
-  - View state management
-  - Routing between different views
-  - Global keyboard shortcuts (quit, back to menu)
+- **Go 1.25+** (for building the loader)
+- **Visual Studio 2019/2022** with C++ support (for building the trainer DLL)
+- **MySQL 8.0+** (for user authentication)
+- **Assault Cube 1.3.0.2** (the game)
 
-### Database Layer (`db.go`)
-- **Purpose**: Database connection management
-- **Responsibilities**:
-  - Initialize MySQL connection
-  - Expose global `DB` instance
-  - Handle connection cleanup
+## ⚙️ Configuration
 
-### Views Package (`views/`)
-Each view is a self-contained component with its own:
-- **Model**: State management for the view
-- **Update**: Input handling and business logic
-- **View**: Rendering logic
-- **Reset**: State cleanup when switching views
+Create `appsettings.json` in the root directory:
 
-#### `types.go`
-- Defines `ViewType` enum (Menu, Login, Register)
+```json
+{
+  "database": {
+    "host": "192.168.0.2",
+    "port": 3306,
+    "user": "your_user",
+    "password": "your_password",
+    "database": "your_database"
+  }
+}
+```
+
+## 🎯 Usage
+
+1. **Build the project:**
+   ```powershell
+   .\build.ps1
+   ```
+
+2. **Run the loader:**
+   ```powershell
+   .\go-project-x86.exe
+   ```
+
+3. **Login or Register** an account
+
+4. **Select "Load Assault Cube"** from the dashboard
+
+5. **Press Enter** to search for the game
+
+6. **Press S** to start the game with trainer
+
+7. **In-game**, use the hotkeys to enable features
+
+## 📝 Notes
+
+- **Architecture:** The loader MUST be 32-bit (`go-project-x86.exe`) to inject into the 32-bit Assault Cube game
+- **DLL Dependencies:** The trainer DLL is statically linked (`/MT`) to avoid runtime dependencies
+- **Database:** User passwords are hashed with bcrypt for security
+- **Addresses:** Memory addresses are from Assault Cube 1.3.0.2 - update `trainer/addresses.md` if using a different version
+
+## 🐛 Troubleshooting
+
+### "Injection failed" error
+- Make sure you're using `go-project-x86.exe` (32-bit), not `go-project.exe` (64-bit)
+- Try running as Administrator
+- Check antivirus isn't blocking the DLL
+
+### "Game not found" error
+- Verify Assault Cube is installed at one of the common locations
+- Check `views/loadassaultcube.go` and add your installation path to `searchPaths`
+
+### Features don't work in-game
+- Open the trainer console window (appears when DLL loads)
+- Check if addresses are reading realistic values (health 1-100, not garbage)
+- Use Cheat Engine to verify addresses match `trainer/addresses.md`
+
+### Console window doesn't appear
+- DLL might not be injecting - check for error messages in the TUI
+- Verify `trainer\actrainer.dll` exists and was built successfully
+
+## 🤝 Development Workflow
+
+```powershell
+# Make changes to Go code or C++ code
+
+# Rebuild and run in one command
+.\run.ps1
+
+# Or build separately
+.\build.ps1
+
+# Test
+.\go-project-x86.exe
+```
+
+## 📄 License
+
+This project is for educational purposes only.
+
+---
+
+**Built with:** Go, Bubble Tea, Lipgloss, C++17, Windows API
 - `ViewTransition` for navigation between views
 - Helper functions for view transitions
 

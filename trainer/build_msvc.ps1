@@ -21,7 +21,7 @@ if (Test-Path $vswhere) {
             
             # Run vcvars and compile in one command
             # /MT = Static runtime linking (no external DLL dependencies)
-            cmd /c "`"$vcvars`" && cd build && cl.exe /LD /MT /std:c++17 /EHsc /I..\include ..\src\dllmain.cpp ..\src\trainer.cpp ..\src\pch.cpp psapi.lib user32.lib /link /OUT:actrainer.dll" 2>&1
+            cmd /c "`"$vcvars`" && cd build && cl.exe /LD /MT /std:c++17 /EHsc /I..\include ..\src\dllmain.cpp ..\src\trainer.cpp ..\src\pipelogger.cpp ..\src\pch.cpp psapi.lib user32.lib /link /OUT:actrainer.dll" 2>&1
             
             if (Test-Path ".\build\actrainer.dll") {
                 Write-Host "`nBuild successful!" -ForegroundColor Green

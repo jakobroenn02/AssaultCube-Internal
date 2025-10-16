@@ -3,11 +3,15 @@
 
 #include <Windows.h>
 #include <cstdint>
+#include "pipelogger.h"
 
 class Trainer {
 private:
     uintptr_t moduleBase;
     bool isRunning;
+    
+    // IPC Communication
+    PipeLogger* pipeLogger;
     
     // Feature toggles
     bool godMode;
