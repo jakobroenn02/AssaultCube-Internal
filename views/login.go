@@ -226,7 +226,6 @@ func (m LoginModel) handleLogin() (LoginModel, tea.Cmd, ViewTransition) {
 	m.Success = true
 	m.LoggedInUser = username
 
-	// TODO: Transition to a home/dashboard view
-	// For now, just show success message
-	return m, nil, NoTransition()
+	// Transition to dashboard
+	return m, nil, TransitionTo(DashboardViewType)
 }

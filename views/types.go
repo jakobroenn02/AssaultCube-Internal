@@ -9,6 +9,9 @@ const (
 	MenuViewType ViewType = iota
 	LoginViewType
 	RegisterViewType
+	DashboardViewType
+	LoadAssaultCubeViewType
+	ResetPasswordViewType
 )
 
 // ViewTransition represents a view change request

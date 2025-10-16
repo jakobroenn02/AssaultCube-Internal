@@ -36,19 +36,27 @@ func clearScreen() {
 
 // model is the main application model that orchestrates different views
 type model struct {
-	currentView   views.ViewType
-	menuModel     views.MenuModel
-	loginModel    views.LoginModel
-	registerModel views.RegisterModel
+	currentView          views.ViewType
+	currentUser          string // Track the logged-in username
+	menuModel            views.MenuModel
+	loginModel           views.LoginModel
+	registerModel        views.RegisterModel
+	dashboardModel       views.DashboardModel
+	loadAssaultCubeModel views.LoadAssaultCubeModel
+	resetPasswordModel   views.ResetPasswordModel
 }
 
 // initialModel creates the initial application model
 func initialModel() model {
 	return model{
-		currentView:   views.MenuViewType,
-		menuModel:     views.NewMenuModel(),
-		loginModel:    views.NewLoginModel(DB),
-		registerModel: views.NewRegisterModel(DB),
+		currentView:          views.MenuViewType,
+		currentUser:          "",
+		menuModel:            views.NewMenuModel(),
+		loginModel:           views.NewLoginModel(DB),
+		registerModel:        views.NewRegisterModel(DB),
+		dashboardModel:       views.NewDashboardModel(""),
+		loadAssaultCubeModel: views.NewLoadAssaultCubeModel(""),
+		resetPasswordModel:   views.NewResetPasswordModel("", DB),
 	}
 }
 
@@ -67,8 +75,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "esc":
-			// Go back to menu from any view
-			if m.currentView != views.MenuViewType {
+			// Go back logic
+			switch m.currentView {
+			case views.DashboardViewType:
+				// From dashboard, logout and go to menu
+				m.currentView = views.MenuViewType
+				m.currentUser = ""
+				m.menuModel = m.menuModel.Reset()
+				m.loginModel = m.loginModel.Reset()
+			case views.LoadAssaultCubeViewType, views.ResetPasswordViewType:
+				// From sub-views, go back to dashboard
+				m.currentView = views.DashboardViewType
+			case views.MenuViewType:
+				// Already at menu, do nothing
+			default:
+				// From login/register, go to menu
 				m.currentView = views.MenuViewType
 				m.menuModel = m.menuModel.Reset()
 				m.loginModel = m.loginModel.Reset()
@@ -93,12 +114,53 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loginModel, cmd, transition = m.loginModel.Update(msg)
 			if transition.ShouldTransition {
 				m.currentView = transition.TargetView
+				// If transitioning to dashboard, save username and update dashboard
+				if transition.TargetView == views.DashboardViewType {
+					m.currentUser = m.loginModel.LoggedInUser
+					m.dashboardModel = m.dashboardModel.SetUsername(m.currentUser)
+				}
 			}
 			return m, cmd
 
 		case views.RegisterViewType:
 			var cmd tea.Cmd
 			m.registerModel, cmd, transition = m.registerModel.Update(msg)
+			if transition.ShouldTransition {
+				m.currentView = transition.TargetView
+			}
+			return m, cmd
+
+		case views.DashboardViewType:
+			var cmd tea.Cmd
+			m.dashboardModel, cmd, transition = m.dashboardModel.Update(msg)
+			if transition.ShouldTransition {
+				m.currentView = transition.TargetView
+				// Update sub-views with current username
+				if transition.TargetView == views.LoadAssaultCubeViewType {
+					m.loadAssaultCubeModel = m.loadAssaultCubeModel.SetUsername(m.currentUser)
+					m.loadAssaultCubeModel = m.loadAssaultCubeModel.Reset()
+				} else if transition.TargetView == views.ResetPasswordViewType {
+					m.resetPasswordModel = m.resetPasswordModel.SetUsername(m.currentUser)
+					m.resetPasswordModel = m.resetPasswordModel.Reset()
+				} else if transition.TargetView == views.MenuViewType {
+					// Logout
+					m.currentUser = ""
+					m.loginModel = m.loginModel.Reset()
+				}
+			}
+			return m, cmd
+
+		case views.LoadAssaultCubeViewType:
+			var cmd tea.Cmd
+			m.loadAssaultCubeModel, cmd, transition = m.loadAssaultCubeModel.Update(msg)
+			if transition.ShouldTransition {
+				m.currentView = transition.TargetView
+			}
+			return m, cmd
+
+		case views.ResetPasswordViewType:
+			var cmd tea.Cmd
+			m.resetPasswordModel, cmd, transition = m.resetPasswordModel.Update(msg)
 			if transition.ShouldTransition {
 				m.currentView = transition.TargetView
 			}
@@ -118,6 +180,12 @@ func (m model) View() string {
 		return m.loginModel.View()
 	case views.RegisterViewType:
 		return m.registerModel.View()
+	case views.DashboardViewType:
+		return m.dashboardModel.View()
+	case views.LoadAssaultCubeViewType:
+		return m.loadAssaultCubeModel.View()
+	case views.ResetPasswordViewType:
+		return m.resetPasswordModel.View()
 	default:
 		return "Unknown view"
 	}
