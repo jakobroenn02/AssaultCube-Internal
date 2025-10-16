@@ -59,13 +59,13 @@ type trainerConnectedMsg struct {
 func listenToPipe() tea.Cmd {
 	return func() tea.Msg {
 		// Try to connect to the pipe
-		_, err := ipc.Connect(10 * time.Second)
+		client, err := ipc.Connect(10 * time.Second)
 		if err != nil {
 			return trainerLogMsg{message: fmt.Sprintf("Failed to connect to trainer: %v", err)}
 		}
 
 		// Signal that we're connected
-		return trainerConnectedMsg{}
+		return trainerConnectedMsg{client: client}
 	}
 }
 
@@ -225,7 +225,7 @@ func (m LoadAssaultCubeModel) handleKeyPress(msg tea.KeyMsg) (LoadAssaultCubeMod
 			m = m.LaunchAndInject()
 			// Start IPC connection after injection
 			if m.Injected && m.Error == "" {
-				return m, StartIPCConnection, NoTransition()
+				return m, StartIPCConnection(), NoTransition()
 			}
 		} else {
 			m.Error = "Cannot launch - game not found"
@@ -538,15 +538,8 @@ func (m LoadAssaultCubeModel) LaunchAndInject() LoadAssaultCubeModel {
 
 // StartIPCConnection initiates the connection to the trainer's named pipe
 // This should be called as a tea.Cmd after successful injection
-func StartIPCConnection() tea.Msg {
-	// Try to connect to the pipe (with timeout)
-	client, err := ipc.Connect(10 * time.Second)
-	if err != nil {
-		return trainerLogMsg{message: fmt.Sprintf("Failed to connect to trainer: %v", err)}
-	}
-
-	// Connection successful!
-	return trainerConnectedMsg{client: client}
+func StartIPCConnection() tea.Cmd {
+	return listenToPipe()
 }
 
 // UpdateFromPipe reads a message from the pipe and returns it as a tea.Msg
