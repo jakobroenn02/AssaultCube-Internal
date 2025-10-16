@@ -86,15 +86,21 @@ func InjectDLL(processID uint32, dllPath string) error {
 			return fmt.Errorf("DLL path contains invalid characters: %s", dllPath)
 		}
 
-		return fmt.Errorf("LoadLibraryA returned NULL - DLL failed to load. Possible causes:\n"+
+		return dllLoadError(dllPath)
+	}
+
+	return nil
+}
+
+// dllLoadError returns a detailed error when LoadLibraryA fails to load the DLL.
+func dllLoadError(dllPath string) error {
+	return fmt.Errorf(
+		"LoadLibraryA returned NULL - DLL failed to load. Possible causes:\n"+
 			"  1. Architecture mismatch (DLL is 32-bit, game might be 64-bit or vice versa)\n"+
 			"  2. Missing dependencies (use Dependency Walker to check)\n"+
 			"  3. DLL is blocked by Windows (right-click DLL -> Properties -> Unblock)\n"+
 			"  4. Antivirus blocking the DLL\n"+
 			"  DLL Path: %s", dllPath)
-	}
-
-	return nil
 }
 
 func openProcess(desiredAccess uint32, inheritHandle bool, processID uint32) (syscall.Handle, error) {
