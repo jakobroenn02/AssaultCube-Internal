@@ -8,6 +8,8 @@ UIRenderer::UIRenderer()
       backgroundBrush(NULL),
       activeFeatureBrush(NULL),
       inactiveFeatureBrush(NULL),
+      buttonBrush(NULL),
+      buttonHoverBrush(NULL),
       headerFont(NULL),
       normalFont(NULL),
       smallFont(NULL),
@@ -16,7 +18,8 @@ UIRenderer::UIRenderer()
       panelX(20),
       panelY(20),
       panelWidth(350),
-      panelHeight(250) {
+      panelHeight(400),
+      hoveredToggleIndex(-1) {
 }
 
 UIRenderer::~UIRenderer() {
@@ -39,15 +42,34 @@ bool UIRenderer::Initialize(HWND targetWindow) {
     backgroundBrush = CreateSolidBrush(UIColors::BACKGROUND);
     activeFeatureBrush = CreateSolidBrush(UIColors::ACTIVE);
     inactiveFeatureBrush = CreateSolidBrush(UIColors::INACTIVE);
+    buttonBrush = CreateSolidBrush(UIColors::BUTTON_BG);
+    buttonHoverBrush = CreateSolidBrush(UIColors::BUTTON_HOVER);
     
     // Create fonts
-    headerFont = CreateFontA(18, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, 
+    headerFont = CreateFontA(20, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, 
                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, 
-                             CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, 
+                             CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, 
                              DEFAULT_PITCH | FF_DONTCARE, "Arial");
     
     normalFont = CreateFontA(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                             CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                             DEFAULT_PITCH | FF_DONTCARE, "Arial");
+    
+    smallFont = CreateFontA(11, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                            CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                            DEFAULT_PITCH | FF_DONTCARE, "Arial");
+    
+    // Get window dimensions
+    RECT clientRect;
+    if (GetClientRect(gameWindow, &clientRect)) {
+        windowWidth = clientRect.right - clientRect.left;
+        windowHeight = clientRect.bottom - clientRect.top;
+    }
+    
+    return true;
+}
                              CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, "Arial");
     
