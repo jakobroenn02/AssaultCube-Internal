@@ -17,13 +17,23 @@ private:
     bool godMode;
     bool infiniteAmmo;
     bool noRecoil;
-    
+
+    // Hotkey tracking
+    bool prevF1State;
+    bool prevF2State;
+    bool prevF3State;
+    bool prevF4State;
+    bool prevEndState;
+
     // Player addresses (to be found)
     uintptr_t playerBase;
     uintptr_t healthAddress;
     uintptr_t armorAddress;
     uintptr_t ammoAddress;
-    
+
+    // Pipe state tracking
+    bool lastPipeConnectionState;
+
     // Original bytes for patching/unpatching
     std::vector<BYTE> originalHealthBytes;
     std::vector<BYTE> originalAmmoBytes;
@@ -82,7 +92,7 @@ public:
     void SetHealth(int value);
     void SetArmor(int value);
     void SetAmmo(int value);
-    
+
     // Address finding
     bool FindPlayerBase();
     bool FindHealthAddress();
@@ -91,6 +101,7 @@ public:
     // Utility
     void UpdatePlayerData();
     void DisplayStatus();
+    void BroadcastStatus();
 };
 
 #endif // TRAINER_H

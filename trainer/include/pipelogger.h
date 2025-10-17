@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <atomic>
 #include <string>
 
 // Named Pipe Logger - sends messages to the TUI loader
@@ -18,12 +19,14 @@ public:
     void SendInit(uintptr_t moduleBase, uintptr_t playerBase, const std::string& version, bool initialized);
     
     // Check if pipe is connected
-    bool IsConnected() const { return pipeHandle != INVALID_HANDLE_VALUE; }
-    
+    bool IsConnected() const { return connected.load() && pipeHandle != INVALID_HANDLE_VALUE; }
+
 private:
     HANDLE pipeHandle;
-    bool connected;
-    
+    std::atomic<bool> connected;
+
+    void BeginAcceptLoop();
+
     // Helper to send JSON message
     bool SendMessage(const std::string& json);
     

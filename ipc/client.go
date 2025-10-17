@@ -31,9 +31,10 @@ const (
 )
 
 var (
-	kernel32           = syscall.NewLazyDLL("kernel32.dll")
-	procCreateFileW    = kernel32.NewProc("CreateFileW")
-	procWaitNamedPipeW = kernel32.NewProc("WaitNamedPipeW")
+	kernel32                    = syscall.NewLazyDLL("kernel32.dll")
+	procCreateFileW             = kernel32.NewProc("CreateFileW")
+	procWaitNamedPipeW          = kernel32.NewProc("WaitNamedPipeW")
+	procSetNamedPipeHandleState = kernel32.NewProc("SetNamedPipeHandleState")
 )
 
 // PipeClient represents a named pipe client
@@ -56,6 +57,11 @@ func Connect(timeout time.Duration) (*PipeClient, error) {
 		// Try to open the pipe
 		handle, err := createFile(pipePath)
 		if err == nil {
+			if err := setPipeReadModeMessage(handle); err != nil {
+				syscall.CloseHandle(handle)
+				return nil, fmt.Errorf("failed to configure pipe: %v", err)
+			}
+
 			// Success!
 			file := os.NewFile(uintptr(handle), PIPE_NAME)
 			return &PipeClient{
@@ -86,6 +92,25 @@ func Connect(timeout time.Duration) (*PipeClient, error) {
 	}
 
 	return nil, fmt.Errorf("failed to connect to pipe within timeout")
+}
+
+func setPipeReadModeMessage(handle syscall.Handle) error {
+	var mode uint32 = PIPE_READMODE_MESSAGE
+	ret, _, err := procSetNamedPipeHandleState.Call(
+		uintptr(handle),
+		uintptr(unsafe.Pointer(&mode)),
+		0,
+		0,
+	)
+
+	if ret == 0 {
+		if errno, ok := err.(syscall.Errno); ok && errno != 0 {
+			return errno
+		}
+		return fmt.Errorf("SetNamedPipeHandleState failed")
+	}
+
+	return nil
 }
 
 // createFile opens a handle to the named pipe

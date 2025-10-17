@@ -6,7 +6,7 @@
 
 #define PIPE_NAME TEXT("\\\\.\\pipe\\actrainer_pipe")
 
-PipeLogger::PipeLogger() 
+PipeLogger::PipeLogger()
     : pipeHandle(INVALID_HANDLE_VALUE), connected(false) {
 }
 
@@ -16,10 +16,13 @@ PipeLogger::~PipeLogger() {
         DisconnectNamedPipe(pipeHandle);
         CloseHandle(pipeHandle);
     }
+    connected.store(false);
 }
 
 bool PipeLogger::Initialize() {
-    // Create named pipe for communication with TUI  
+    connected.store(false);
+
+    // Create named pipe for communication with TUI
     pipeHandle = CreateNamedPipe(
         PIPE_NAME,                      // Pipe name
         PIPE_ACCESS_DUPLEX,             // Read/write access
@@ -42,19 +45,8 @@ bool PipeLogger::Initialize() {
     
     // Start a background thread to wait for client connection
     // This prevents blocking the main trainer thread
-    std::thread([this]() {
-        BOOL connected = ConnectNamedPipe(pipeHandle, NULL);
-        DWORD error = GetLastError();
-        
-        if (!connected && error != ERROR_PIPE_CONNECTED) {
-            std::cerr << "ConnectNamedPipe failed. Error: " << error << std::endl;
-            return;
-        }
-        
-        std::cout << "TUI client connected to pipe!" << std::endl;
-        this->connected = true;
-    }).detach();
-    
+    BeginAcceptLoop();
+
     return true;
 }
 
@@ -77,28 +69,56 @@ bool PipeLogger::SendMessage(const std::string& json) {
     
     if (!success) {
         DWORD error = GetLastError();
-        // Pipe not yet connected or disconnected
-        if (error == ERROR_NO_DATA || error == ERROR_PIPE_NOT_CONNECTED || 
-            error == ERROR_PIPE_LISTENING) {
-            connected = false;
+        switch (error) {
+        case ERROR_NO_DATA:
+        case ERROR_BROKEN_PIPE:
+            connected.store(false);
+            DisconnectNamedPipe(pipeHandle);
+            BeginAcceptLoop();
+            return false;
+        case ERROR_PIPE_NOT_CONNECTED:
+        case ERROR_PIPE_LISTENING:
+            connected.store(false);
+            return false;
+        default:
             return false;
         }
-        return false;
     }
-    
+
     if (bytesWritten != message.length()) {
         return false;
     }
-    
+
     // Mark as connected if write succeeded
-    if (!connected) {
+    if (!connected.load()) {
         std::cout << "TUI client connected!" << std::endl;
-        connected = true;
     }
-    
+    connected.store(true);
+
     // Flush to ensure message is sent immediately
     FlushFileBuffers(pipeHandle);
     return true;
+}
+
+void PipeLogger::BeginAcceptLoop() {
+    if (pipeHandle == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    connected.store(false);
+
+    std::thread([this]() {
+        BOOL connectedResult = ConnectNamedPipe(pipeHandle, NULL);
+        DWORD error = GetLastError();
+
+        if (!connectedResult && error != ERROR_PIPE_CONNECTED) {
+            std::cerr << "ConnectNamedPipe failed. Error: " << error << std::endl;
+            return;
+        }
+
+        std::cout << "TUI client connected to pipe!" << std::endl;
+        this->connected.store(true);
+    }).detach();
 }
 
 std::string PipeLogger::EscapeJson(const std::string& str) {

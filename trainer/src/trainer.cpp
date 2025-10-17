@@ -42,17 +42,23 @@ void ClearConsole() {
     SetConsoleCursorPosition(hConsole, homeCoords);
 }
 
-Trainer::Trainer(uintptr_t base) 
+Trainer::Trainer(uintptr_t base)
     : moduleBase(base),
       isRunning(true),
       pipeLogger(nullptr),
       godMode(false),
       infiniteAmmo(false),
       noRecoil(false),
+      prevF1State(false),
+      prevF2State(false),
+      prevF3State(false),
+      prevF4State(false),
+      prevEndState(false),
       playerBase(0),
       healthAddress(0),
       armorAddress(0),
-      ammoAddress(0) {
+      ammoAddress(0),
+      lastPipeConnectionState(false) {
 }
 
 Trainer::~Trainer() {
@@ -151,9 +157,9 @@ bool Trainer::Initialize() {
     if (pipeLogger && pipeLogger->IsConnected()) {
         pipeLogger->SendInit(moduleBase, playerBase, "1.0.0", true);
         pipeLogger->SendLog("info", "Trainer initialized successfully!");
-        pipeLogger->SendStatus(currentHealth, currentArmor, currentAmmo, false, false, false);
+        BroadcastStatus();
     }
-    
+
     return true;
 }
 
@@ -161,48 +167,68 @@ void Trainer::Run() {
 #ifdef _DEBUG
     std::cout << "\nTrainer is running...\n" << std::endl;
 #endif
-    
+
     int statusCounter = 0;
     const int STATUS_UPDATE_INTERVAL = 100; // Send status every 100 iterations (~1 second)
-    
+
     while (isRunning) {
+        if (pipeLogger) {
+            bool pipeConnected = pipeLogger->IsConnected();
+            if (pipeConnected && !lastPipeConnectionState) {
+                pipeLogger->SendInit(moduleBase, playerBase, "1.0.0", true);
+                pipeLogger->SendLog("info", "Trainer connected to TUI client");
+                BroadcastStatus();
+            }
+            lastPipeConnectionState = pipeConnected;
+        }
+
         // Check for hotkeys
-        if (GetAsyncKeyState(VK_F1) & 1) {
+        bool f1Pressed = (GetAsyncKeyState(VK_F1) & 0x8000) != 0;
+        if (f1Pressed && !prevF1State) {
             ToggleGodMode();
         }
-        if (GetAsyncKeyState(VK_F2) & 1) {
+        prevF1State = f1Pressed;
+
+        bool f2Pressed = (GetAsyncKeyState(VK_F2) & 0x8000) != 0;
+        if (f2Pressed && !prevF2State) {
             ToggleInfiniteAmmo();
         }
-        if (GetAsyncKeyState(VK_F3) & 1) {
+        prevF2State = f2Pressed;
+
+        bool f3Pressed = (GetAsyncKeyState(VK_F3) & 0x8000) != 0;
+        if (f3Pressed && !prevF3State) {
             ToggleNoRecoil();
         }
-        if (GetAsyncKeyState(VK_F4) & 1) {
+        prevF3State = f3Pressed;
+
+        bool f4Pressed = (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
+        if (f4Pressed && !prevF4State) {
             AddHealth(1000);
         }
-        if (GetAsyncKeyState(VK_END) & 1) {
+        prevF4State = f4Pressed;
+
+        bool endPressed = (GetAsyncKeyState(VK_END) & 0x8000) != 0;
+        if (endPressed && !prevEndState) {
             isRunning = false;
             if (pipeLogger && pipeLogger->IsConnected()) {
                 pipeLogger->SendLog("info", "Trainer shutting down...");
             }
             break;
         }
-        
+        prevEndState = endPressed;
+
         // Update player data if features are active
         if (godMode || infiniteAmmo) {
             UpdatePlayerData();
         }
-        
+
         // Send periodic status updates to TUI
         statusCounter++;
-        if (statusCounter >= STATUS_UPDATE_INTERVAL && pipeLogger && pipeLogger->IsConnected()) {
-            int health = healthAddress ? Memory::Read<int>(healthAddress) : 0;
-            int armor = armorAddress ? Memory::Read<int>(armorAddress) : 0;
-            int ammo = ammoAddress ? Memory::Read<int>(ammoAddress) : 0;
-            
-            pipeLogger->SendStatus(health, armor, ammo, godMode, infiniteAmmo, noRecoil);
+        if (statusCounter >= STATUS_UPDATE_INTERVAL) {
+            BroadcastStatus();
             statusCounter = 0;
         }
-        
+
         // Sleep to reduce CPU usage
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -252,6 +278,8 @@ void Trainer::ToggleGodMode() {
         std::cout << "========================================\n" << std::endl;
         std::cout.flush();
     }
+
+    BroadcastStatus();
 }
 
 void Trainer::ToggleInfiniteAmmo() {
@@ -276,6 +304,8 @@ void Trainer::ToggleInfiniteAmmo() {
         std::cout << "========================================\n" << std::endl;
         std::cout.flush();
     }
+
+    BroadcastStatus();
 }
 
 void Trainer::ToggleNoRecoil() {
@@ -289,9 +319,11 @@ void Trainer::ToggleNoRecoil() {
     if (pipeLogger && pipeLogger->IsConnected()) {
         pipeLogger->SendLog("info", noRecoil ? "No Recoil enabled" : "No Recoil disabled");
     }
-    
+
     // This would require patching recoil-related instructions
     // Need to find the recoil code in the game
+
+    BroadcastStatus();
 }
 
 void Trainer::AddHealth(int amount) {
@@ -304,6 +336,8 @@ void Trainer::AddHealth(int amount) {
         std::cout << "========================================\n" << std::endl;
         std::cout.flush();
     }
+
+    BroadcastStatus();
 }
 
 void Trainer::SetHealth(int value) {
@@ -382,9 +416,21 @@ void Trainer::DisplayStatus() {
     std::cout << "God Mode: " << (godMode ? "ON" : "OFF") << std::endl;
     std::cout << "Infinite Ammo: " << (infiniteAmmo ? "ON" : "OFF") << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
-    
+
     if (healthAddress) {
         int health = Memory::Read<int>(healthAddress);
         std::cout << "\nHealth: " << health << std::endl;
     }
+}
+
+void Trainer::BroadcastStatus() {
+    if (!pipeLogger || !pipeLogger->IsConnected()) {
+        return;
+    }
+
+    int health = healthAddress ? Memory::Read<int>(healthAddress) : 0;
+    int armor = armorAddress ? Memory::Read<int>(armorAddress) : 0;
+    int ammo = ammoAddress ? Memory::Read<int>(ammoAddress) : 0;
+
+    pipeLogger->SendStatus(health, armor, ammo, godMode, infiniteAmmo, noRecoil);
 }

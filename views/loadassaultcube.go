@@ -179,10 +179,18 @@ func (m LoadAssaultCubeModel) Update(msg tea.Msg) (LoadAssaultCubeModel, tea.Cmd
 		m.Connected = true
 		m.pipeClient = msg.client
 		m.TrainerLogs = append(m.TrainerLogs, "Connected to trainer")
+		m.Status = "Trainer connection established"
+		if len(m.TrainerLogs) > 10 {
+			m.TrainerLogs = m.TrainerLogs[len(m.TrainerLogs)-10:]
+		}
 		return m, UpdateFromPipe(m.pipeClient), NoTransition()
 
 	case trainerStatusMsg:
 		// Update stats from trainer
+		if !m.Connected {
+			m.Status = "Trainer connection established"
+		}
+		m.Connected = true
 		m.Health = msg.health
 		m.Armor = msg.armor
 		m.Ammo = msg.ammo
@@ -197,6 +205,22 @@ func (m LoadAssaultCubeModel) Update(msg tea.Msg) (LoadAssaultCubeModel, tea.Cmd
 
 	case trainerLogMsg:
 		// Add log message
+		lowerMsg := strings.ToLower(msg.message)
+		connectionIssue := strings.Contains(lowerMsg, "pipe disconnected") ||
+			strings.Contains(lowerMsg, "pipe error") ||
+			strings.Contains(lowerMsg, "failed to connect")
+
+		if connectionIssue {
+			if m.pipeClient != nil {
+				_ = m.pipeClient.Close()
+				m.pipeClient = nil
+			}
+			m.Connected = false
+			if m.Injected {
+				m.Status = "Waiting for trainer connection..."
+			}
+		}
+
 		m.TrainerLogs = append(m.TrainerLogs, msg.message)
 
 		// Keep only last 10 logs
@@ -205,6 +229,13 @@ func (m LoadAssaultCubeModel) Update(msg tea.Msg) (LoadAssaultCubeModel, tea.Cmd
 		}
 
 		// Continue reading from pipe
+		if connectionIssue {
+			if m.Injected {
+				return m, StartIPCConnection(), NoTransition()
+			}
+			return m, nil, NoTransition()
+		}
+
 		if m.pipeClient != nil {
 			return m, UpdateFromPipe(m.pipeClient), NoTransition()
 		}
