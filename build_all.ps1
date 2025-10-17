@@ -113,9 +113,14 @@ try {
         Remove-Item "tuiapp.syso" -Force
     }
     
-    # Build the Go executable (manifest will be embedded separately)
-    Write-Host "  Compiling Go application..." -ForegroundColor DarkGray
+    # Build the Go executable as 32-bit to match the 32-bit game
+    Write-Host "  Compiling Go application (32-bit to match game architecture)..." -ForegroundColor DarkGray
+    $env:GOARCH = "386"
     go build -o tuiapp.exe
+    
+    if ($LASTEXITCODE -ne 0) {
+        throw "Go build failed with exit code $LASTEXITCODE"
+    }
     
     # Note: The tuiapp.manifest file exists for documentation
     # To use it, run: tuiapp.exe (Windows will check for .manifest sidecar file)
