@@ -2,21 +2,6 @@
 #include "trainer.h"
 #include "memory.h"
 #include <iostream>
-#include <fstream>
-
-// Helper to write to log file
-void LogToFile(const std::string& message) {
-    // Write to user's temp folder - guaranteed writable
-    char tempPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempPath);
-    std::string logPath = std::string(tempPath) + "trainer_debug.txt";
-    
-    std::ofstream logFile(logPath, std::ios::app);
-    if (logFile.is_open()) {
-        logFile << message << std::endl;
-        logFile.close();
-    }
-}
 
 Trainer::Trainer(uintptr_t base) 
     : moduleBase(base),
@@ -37,20 +22,13 @@ Trainer::~Trainer() {
 
 bool Trainer::Initialize() {
     std::cout << "Initializing trainer..." << std::endl;
-    LogToFile("=== TRAINER INITIALIZING ===");
     
     // Read LocalPlayer pointer from ac_client.exe + 0x0017E0A8
     playerBase = Memory::Read<uintptr_t>(moduleBase + 0x0017E0A8);
     
-    char buffer[256];
-    sprintf_s(buffer, "Module Base: 0x%08X", moduleBase);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Player Base: 0x%08X", playerBase);
-    LogToFile(buffer);
     
     if (playerBase == 0) {
         std::cout << "ERROR: Failed to read player base from 0x" << std::hex << (moduleBase + 0x0017E0A8) << std::dec << std::endl;
-        LogToFile("ERROR: Player base is NULL!");
         return false;
     }
     
@@ -61,12 +39,6 @@ bool Trainer::Initialize() {
     armorAddress = playerBase + 0xF0;   // Armor Value
     ammoAddress = playerBase + 0x140;   // Assault Rifle Ammo
     
-    sprintf_s(buffer, "Health Address: 0x%08X", healthAddress);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Armor Address: 0x%08X", armorAddress);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Ammo Address: 0x%08X", ammoAddress);
-    LogToFile(buffer);
     
     std::cout << "Health address: 0x" << std::hex << healthAddress << std::dec << std::endl;
     std::cout << "Armor address: 0x" << std::hex << armorAddress << std::dec << std::endl;
@@ -77,12 +49,6 @@ bool Trainer::Initialize() {
     int currentArmor = Memory::Read<int>(armorAddress);
     int currentAmmo = Memory::Read<int>(ammoAddress);
     
-    sprintf_s(buffer, "Current Health: %d", currentHealth);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Current Armor: %d", currentArmor);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Current Ammo: %d", currentAmmo);
-    LogToFile(buffer);
     
     std::cout << "\nCurrent values:" << std::endl;
     std::cout << "  Health: " << currentHealth << std::endl;
@@ -90,7 +56,6 @@ bool Trainer::Initialize() {
     std::cout << "  Ammo: " << currentAmmo << std::endl;
     
     std::cout << "\nTrainer initialized successfully!" << std::endl;
-    LogToFile("=== TRAINER READY ===\n");
     return true;
 }
 
@@ -129,7 +94,6 @@ void Trainer::Run() {
 void Trainer::ToggleGodMode() {
     godMode = !godMode;
     
-    LogToFile(godMode ? "=== F1 PRESSED: God Mode ON ===" : "=== F1 PRESSED: God Mode OFF ===");
     
     std::cout << "\n========================================" << std::endl;
     std::cout << "God Mode: " << (godMode ? "ON" : "OFF") << std::endl;
@@ -141,9 +105,6 @@ void Trainer::ToggleGodMode() {
         int currentHealth = Memory::Read<int>(healthAddress);
         int currentArmor = Memory::Read<int>(armorAddress);
         
-        char buffer[256];
-        sprintf_s(buffer, "Before: Health=%d, Armor=%d", currentHealth, currentArmor);
-        LogToFile(buffer);
         
         std::cout << "  Current Health: " << currentHealth << ", Armor: " << currentArmor << std::endl;
         std::cout.flush();
@@ -158,8 +119,6 @@ void Trainer::ToggleGodMode() {
         int newHealth = Memory::Read<int>(healthAddress);
         int newArmor = Memory::Read<int>(armorAddress);
         
-        sprintf_s(buffer, "After: Health=%d, Armor=%d", newHealth, newArmor);
-        LogToFile(buffer);
         
         std::cout << "  New Health: " << newHealth << ", Armor: " << newArmor << std::endl;
         std::cout << "========================================\n" << std::endl;
