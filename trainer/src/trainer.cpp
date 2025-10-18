@@ -102,10 +102,11 @@ bool Trainer::Initialize() {
 
 void Trainer::Run() {
     std::cout << "\nTrainer is running with overlay support...\n" << std::endl;
-    std::cout << "Click features in the overlay to toggle them!" << std::endl;
+    std::cout << "Press INSERT to show/hide menu" << std::endl;
+    std::cout << "Use UP/DOWN arrows to navigate, ENTER to toggle" << std::endl;
     
     while (isRunning) {
-        // Process overlay input
+        // Process overlay input (keyboard navigation)
         ProcessOverlayInput();
         
         // Update player data if features are active
@@ -279,26 +280,55 @@ void Trainer::UpdatePlayerData() {
 void Trainer::ProcessOverlayInput() {
     if (!uiRenderer) return;
     
-    // Check for mouse clicks (left mouse button)
-    if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-        POINT cursorPos;
-        if (GetCursorPos(&cursorPos)) {
-            ScreenToClient(gameWindowHandle, &cursorPos);
-            HandleMouseClick(cursorPos.x, cursorPos.y);
+    // Check for INSERT key to toggle menu visibility
+    static bool insertPressed = false;
+    if (GetAsyncKeyState(VK_INSERT) & 0x8000) {
+        if (!insertPressed) {
+            uiRenderer->ToggleMenu();
+            insertPressed = true;
         }
-        
-        // Debounce - wait for button release
-        while (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
+    } else {
+        insertPressed = false;
     }
-}
-
-// Handle mouse click on overlay
-bool Trainer::HandleMouseClick(int x, int y) {
-    if (!uiRenderer) return false;
     
-    return uiRenderer->HandleMouseClick(x, y);
+    // Only process other keys if menu is visible
+    if (!uiRenderer->IsMenuVisible()) return;
+    
+    // UP arrow - navigate up
+    static bool upPressed = false;
+    if (GetAsyncKeyState(VK_UP) & 0x8000) {
+        if (!upPressed) {
+            uiRenderer->HandleKeyUp();
+            upPressed = true;
+        }
+    } else {
+        upPressed = false;
+    }
+    
+    // DOWN arrow - navigate down
+    static bool downPressed = false;
+    if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
+        if (!downPressed) {
+            uiRenderer->HandleKeyDown();
+            downPressed = true;
+        }
+    } else {
+        downPressed = false;
+    }
+    
+    // ENTER - activate selected item
+    static bool enterPressed = false;
+    if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
+        if (!enterPressed) {
+            bool unloadRequested = uiRenderer->HandleKeyEnter();
+            if (unloadRequested) {
+                RequestUnload();
+            }
+            enterPressed = true;
+        }
+    } else {
+        enterPressed = false;
+    }
 }
 
 // Build feature toggles for UI

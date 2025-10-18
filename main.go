@@ -67,6 +67,30 @@ func (m model) Init() tea.Cmd {
 
 // Update handles all input and delegates to specific views
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle LoadAssaultCube view separately since it needs non-KeyMsg messages
+	if m.currentView == views.LoadAssaultCubeViewType {
+		// First check for ESC key to go back
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			if keyMsg.String() == "esc" {
+				m.currentView = views.DashboardViewType
+				return m, nil
+			}
+			if keyMsg.String() == "ctrl+c" || keyMsg.String() == "q" {
+				return m, tea.Quit
+			}
+		}
+
+		// Pass all messages to LoadAssaultCube (it handles InjectionSuccessMsg, errors, etc.)
+		var cmd tea.Cmd
+		var transition views.ViewTransition
+		m.loadAssaultCubeModel, cmd, transition = m.loadAssaultCubeModel.Update(msg)
+		if transition.ShouldTransition {
+			m.currentView = transition.TargetView
+		}
+		return m, cmd
+	}
+
+	// For other views, only handle KeyMsg
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Global shortcuts
@@ -147,14 +171,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.currentUser = ""
 					m.loginModel = m.loginModel.Reset()
 				}
-			}
-			return m, cmd
-
-		case views.LoadAssaultCubeViewType:
-			var cmd tea.Cmd
-			m.loadAssaultCubeModel, cmd, transition = m.loadAssaultCubeModel.Update(msg)
-			if transition.ShouldTransition {
-				m.currentView = transition.TargetView
 			}
 			return m, cmd
 

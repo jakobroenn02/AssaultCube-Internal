@@ -91,7 +91,6 @@ public:
     
     // Overlay input processing
     void ProcessOverlayInput();
-    bool HandleMouseClick(int x, int y);
     
     // Feature functions
     void ToggleGodMode();

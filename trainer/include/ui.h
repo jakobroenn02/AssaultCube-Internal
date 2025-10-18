@@ -7,16 +7,16 @@
 #include <functional>
 #include <cstdint>
 
-// UI Color Palette
+// UI Color Palette - Dark theme for comfortable viewing
 namespace UIColors {
-    static const COLORREF BACKGROUND = RGB(20, 20, 30);     // Dark blue-gray
-    static const COLORREF BORDER = RGB(100, 150, 200);      // Bright blue
-    static const COLORREF ACTIVE = RGB(0, 255, 100);        // Bright green
-    static const COLORREF INACTIVE = RGB(150, 150, 150);    // Gray
-    static const COLORREF TEXT = RGB(200, 200, 200);        // Light gray
-    static const COLORREF HEADER = RGB(100, 200, 255);      // Cyan
-    static const COLORREF BUTTON_BG = RGB(40, 40, 50);      // Darker background for buttons
-    static const COLORREF BUTTON_HOVER = RGB(60, 60, 80);   // Button hover state
+    static const COLORREF BACKGROUND = RGB(25, 28, 32);      // Very dark gray-blue
+    static const COLORREF BORDER = RGB(60, 70, 85);          // Subtle dark blue-gray border
+    static const COLORREF ACTIVE = RGB(80, 200, 120);        // Softer green (less bright)
+    static const COLORREF INACTIVE = RGB(100, 105, 110);     // Muted gray
+    static const COLORREF TEXT = RGB(180, 185, 190);         // Soft light gray (not white)
+    static const COLORREF HEADER = RGB(120, 160, 200);       // Muted cyan-blue
+    static const COLORREF BUTTON_BG = RGB(35, 38, 42);       // Slightly lighter than background
+    static const COLORREF BUTTON_HOVER = RGB(45, 50, 58);    // Subtle hover highlight
 }
 
 // Feature toggle widget
@@ -38,7 +38,11 @@ struct PlayerStats {
 class UIRenderer {
 private:
     HWND gameWindow;
+    HWND overlayWindow;    // Transparent overlay window
     HDC deviceContext;
+    HDC memoryDC;          // Double buffer to prevent flicker
+    HBITMAP memoryBitmap;
+    HBITMAP oldBitmap;
     HBRUSH backgroundBrush;
     HBRUSH activeFeatureBrush;
     HBRUSH inactiveFeatureBrush;
@@ -59,7 +63,8 @@ private:
     // Interactive elements
     std::vector<FeatureToggle> featureToggles;
     RECT unloadButtonRect;
-    int hoveredToggleIndex;
+    int selectedIndex;     // For keyboard navigation (-1 = unload button)
+    bool menuVisible;      // Menu visibility toggle
     
 public:
     UIRenderer();
@@ -71,13 +76,18 @@ public:
     // Render the main UI panel with interactive toggles
     void Render(const std::vector<FeatureToggle>& toggles, const PlayerStats& stats);
     
-    // Input handling
-    bool HandleMouseClick(int x, int y);
-    void HandleMouseMove(int x, int y);
+    // Menu visibility
+    void ToggleMenu();
+    bool IsMenuVisible() const { return menuVisible; }
     
-    // Get bounds for hit testing
-    const std::vector<FeatureToggle>& GetToggles() const { return featureToggles; }
-    const RECT& GetUnloadButtonRect() const { return unloadButtonRect; }
+    // Keyboard navigation
+    void HandleKeyDown();   // Arrow DOWN
+    void HandleKeyUp();     // Arrow UP
+    bool HandleKeyEnter();  // ENTER key - returns true if unload requested
+    
+    // Get selected item info
+    int GetSelectedIndex() const { return selectedIndex; }
+    size_t GetToggleCount() const { return featureToggles.size(); }
     
     // Render individual components
     void RenderPanel();
