@@ -104,6 +104,10 @@ Example configuration:
    ```
 3. Copy the resulting `actrainer.dll` (found in `trainer/build/lib/Release/`) to `trainer/actrainer.dll`. The loader checks that path before launching the game.【F:views/loadassaultcube.go†L1-L160】
 
+### All-in-One Windows Build
+
+When you want to compile everything and launch from a single command, run `build_all.ps1` from the project root in an elevated PowerShell session. The script verifies Visual Studio, builds the trainer, compiles the Go loader as a 32-bit executable, and warns if you are not running with Administrator privileges (required for injection).【F:build_all.ps1†L1-L120】【F:build_all.ps1†L120-L160】
+
 ## Running the Loader
 
 ```bash
@@ -138,6 +142,10 @@ On Windows, run `tuiapp.exe` from a terminal. The program clears the console, lo
 ### Reset Password
 - `Tab` / `Shift+Tab` / arrow keys: switch between password inputs.
 - `Enter`: submit the reset once the button is focused. The model validates the current password, enforces a minimum length, and writes the new hash back to MySQL.【F:views/resetpassword.go†L1-L202】
+
+### Customizing the Look & Feel
+- Update the shared Lipgloss palette and widget styles in `views/styles.go` to tweak colors, borders, and focus/blur states for inputs and buttons across the entire interface.【F:views/styles.go†L1-L80】
+- Adjust menu labels or navigation prompts by editing `views/menu.go`, which controls the initial screen and its keyboard bindings.【F:views/menu.go†L1-L120】
 
 ## Updating Known Game Versions
 
