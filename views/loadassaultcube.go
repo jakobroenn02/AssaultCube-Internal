@@ -15,6 +15,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// InjectionSuccessMsg signals that injection was successful
+type InjectionSuccessMsg struct{}
+
 // Known Assault Cube version checksums (example - you'll need to update these)
 var knownVersions = map[string]string{
 	"1.3.0.2": "your_sha256_checksum_here", // Replace with actual checksum
@@ -58,18 +61,36 @@ func NewLoadAssaultCubeModel(username string) LoadAssaultCubeModel {
 }
 
 // Update handles assault cube loader input
-func (m LoadAssaultCubeModel) Update(msg tea.KeyMsg) (LoadAssaultCubeModel, tea.Cmd, ViewTransition) {
-	switch msg.String() {
-	case "enter", "l":
-		// Trigger game search and validation
-		m = m.FindAndValidateGame()
-	case "s":
-		// Launch game (only if valid)
-		if m.GameFound {
-			m = m.LaunchAndInject()
-		} else {
-			m.Error = "Cannot launch - game not found"
+func (m LoadAssaultCubeModel) Update(msg tea.Msg) (LoadAssaultCubeModel, tea.Cmd, ViewTransition) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter", "l":
+			// Trigger game search and validation
+			m = m.FindAndValidateGame()
+		case "s":
+			// Launch game (only if valid)
+			if m.GameFound {
+				m.Launching = true
+				m.Status = "Launching Assault Cube..."
+				m.Error = ""
+				return m, m.launchGameCmd(), NoTransition()
+			} else {
+				m.Error = "Cannot launch - game not found"
+			}
 		}
+	case InjectionSuccessMsg:
+		// Injection successful - close the launcher after a brief delay
+		m.Status = "✓ Trainer injected successfully! Closing launcher..."
+		m.Injected = true
+		m.Launching = false
+		return m, tea.Quit, NoTransition()
+	case error:
+		// Handle errors from launch command
+		m.Error = msg.Error()
+		m.Status = "Injection failed"
+		m.Launching = false
+		return m, nil, NoTransition()
 	}
 
 	return m, nil, NoTransition()
@@ -286,6 +307,26 @@ func (m LoadAssaultCubeModel) calculateMD5(filepath string) (string, error) {
 	}
 
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// launchGameCmd returns a command that launches the game and injects the trainer
+func (m LoadAssaultCubeModel) launchGameCmd() tea.Cmd {
+	return func() tea.Msg {
+		// Check if DLL exists
+		if _, err := os.Stat(m.DLLPath); os.IsNotExist(err) {
+			return fmt.Errorf("trainer DLL not found at: %s", m.DLLPath)
+		}
+
+		// Launch the game and inject DLL
+		err := injection.LaunchAndInject(m.GamePath, m.DLLPath)
+		if err != nil {
+			return fmt.Errorf("failed to inject trainer: %w", err)
+		}
+
+		// Return success message which will trigger quit
+		// (The injection function already waits for initialization)
+		return InjectionSuccessMsg{}
+	}
 }
 
 // LaunchAndInject launches the game and injects the trainer DLL

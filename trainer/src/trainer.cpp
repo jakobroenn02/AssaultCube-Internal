@@ -1,56 +1,69 @@
 #include "pch.h"
 #include "trainer.h"
+#include "ui.h"
 #include "memory.h"
 #include <iostream>
-#include <fstream>
-
-// Helper to write to log file
-void LogToFile(const std::string& message) {
-    // Write to user's temp folder - guaranteed writable
-    char tempPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempPath);
-    std::string logPath = std::string(tempPath) + "trainer_debug.txt";
-    
-    std::ofstream logFile(logPath, std::ios::app);
-    if (logFile.is_open()) {
-        logFile << message << std::endl;
-        logFile.close();
-    }
-}
 
 Trainer::Trainer(uintptr_t base) 
     : moduleBase(base),
       isRunning(true),
+      uiRenderer(nullptr),
+      gameWindowHandle(NULL),
       godMode(false),
       infiniteAmmo(false),
       noRecoil(false),
+      regenHealth(false),
+      recoilPatchAddress(0),
+      recoilPatched(false),
       playerBase(0),
       healthAddress(0),
       armorAddress(0),
       ammoAddress(0) {
+    lastRenderTime = std::chrono::steady_clock::now();
 }
 
 Trainer::~Trainer() {
-    // Restore original bytes if needed
-    // Clean up any patches
+    // Restore recoil bytes if patched
+    if (recoilPatched) {
+        RestoreRecoilBytes();
+    }
+    
+    // Clean up UI renderer
+    if (uiRenderer) {
+        uiRenderer->Shutdown();
+        delete uiRenderer;
+        uiRenderer = nullptr;
+    }
 }
 
 bool Trainer::Initialize() {
     std::cout << "Initializing trainer..." << std::endl;
-    LogToFile("=== TRAINER INITIALIZING ===");
+    
+    // Get the game window handle
+    gameWindowHandle = FindWindowA(NULL, "AssaultCube");
+    if (!gameWindowHandle) {
+        gameWindowHandle = FindWindowA("AssaultCube", NULL);
+    }
+    
+    // Initialize UI Renderer
+    if (gameWindowHandle) {
+        uiRenderer = new UIRenderer();
+        if (!uiRenderer->Initialize(gameWindowHandle)) {
+            std::cout << "WARNING: Failed to initialize UI renderer" << std::endl;
+            delete uiRenderer;
+            uiRenderer = nullptr;
+        } else {
+            std::cout << "UI Renderer initialized successfully!" << std::endl;
+        }
+    } else {
+        std::cout << "WARNING: Could not find game window" << std::endl;
+    }
     
     // Read LocalPlayer pointer from ac_client.exe + 0x0017E0A8
     playerBase = Memory::Read<uintptr_t>(moduleBase + 0x0017E0A8);
     
-    char buffer[256];
-    sprintf_s(buffer, "Module Base: 0x%08X", moduleBase);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Player Base: 0x%08X", playerBase);
-    LogToFile(buffer);
-    
     if (playerBase == 0) {
         std::cout << "ERROR: Failed to read player base from 0x" << std::hex << (moduleBase + 0x0017E0A8) << std::dec << std::endl;
-        LogToFile("ERROR: Player base is NULL!");
         return false;
     }
     
@@ -61,28 +74,22 @@ bool Trainer::Initialize() {
     armorAddress = playerBase + 0xF0;   // Armor Value
     ammoAddress = playerBase + 0x140;   // Assault Rifle Ammo
     
-    sprintf_s(buffer, "Health Address: 0x%08X", healthAddress);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Armor Address: 0x%08X", armorAddress);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Ammo Address: 0x%08X", ammoAddress);
-    LogToFile(buffer);
-    
     std::cout << "Health address: 0x" << std::hex << healthAddress << std::dec << std::endl;
     std::cout << "Armor address: 0x" << std::hex << armorAddress << std::dec << std::endl;
     std::cout << "Ammo address: 0x" << std::hex << ammoAddress << std::dec << std::endl;
+    
+    // Find recoil patch address
+    if (FindRecoilPatchAddress()) {
+        std::cout << "Recoil patch address found at: 0x" << std::hex << recoilPatchAddress << std::dec << std::endl;
+    } else {
+        std::cout << "WARNING: Could not find recoil patch address" << std::endl;
+    }
     
     // Read and display current values to verify addresses are correct
     int currentHealth = Memory::Read<int>(healthAddress);
     int currentArmor = Memory::Read<int>(armorAddress);
     int currentAmmo = Memory::Read<int>(ammoAddress);
     
-    sprintf_s(buffer, "Current Health: %d", currentHealth);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Current Armor: %d", currentArmor);
-    LogToFile(buffer);
-    sprintf_s(buffer, "Current Ammo: %d", currentAmmo);
-    LogToFile(buffer);
     
     std::cout << "\nCurrent values:" << std::endl;
     std::cout << "  Health: " << currentHealth << std::endl;
@@ -90,46 +97,44 @@ bool Trainer::Initialize() {
     std::cout << "  Ammo: " << currentAmmo << std::endl;
     
     std::cout << "\nTrainer initialized successfully!" << std::endl;
-    LogToFile("=== TRAINER READY ===\n");
     return true;
 }
 
 void Trainer::Run() {
-    std::cout << "\nTrainer is running...\n" << std::endl;
+    std::cout << "\nTrainer is running with overlay support...\n" << std::endl;
+    std::cout << "Press INSERT to show/hide menu" << std::endl;
+    std::cout << "Use UP/DOWN arrows to navigate, ENTER to toggle" << std::endl;
     
     while (isRunning) {
-        // Check for hotkeys
-        if (GetAsyncKeyState(VK_F1) & 1) {
-            ToggleGodMode();
-        }
-        if (GetAsyncKeyState(VK_F2) & 1) {
-            ToggleInfiniteAmmo();
-        }
-        if (GetAsyncKeyState(VK_F3) & 1) {
-            ToggleNoRecoil();
-        }
-        if (GetAsyncKeyState(VK_F4) & 1) {
-            AddHealth(1000);
-        }
-        if (GetAsyncKeyState(VK_END) & 1) {
-            isRunning = false;
-            break;
-        }
+        // Process overlay input (keyboard navigation)
+        ProcessOverlayInput();
         
         // Update player data if features are active
-        if (godMode || infiniteAmmo) {
+        if (godMode || infiniteAmmo || regenHealth) {
             UpdatePlayerData();
+        }
+        
+        // Render UI at controlled frame rate (60 FPS)
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastRenderTime);
+        
+        if (uiRenderer && elapsed.count() >= 16) { // ~60 FPS
+            auto toggles = BuildFeatureToggles();
+            auto stats = GetPlayerStats();
+            uiRenderer->Render(toggles, stats);
+            lastRenderTime = currentTime;
         }
         
         // Sleep to reduce CPU usage
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    
+    std::cout << "\nTrainer shutting down..." << std::endl;
 }
 
 void Trainer::ToggleGodMode() {
     godMode = !godMode;
     
-    LogToFile(godMode ? "=== F1 PRESSED: God Mode ON ===" : "=== F1 PRESSED: God Mode OFF ===");
     
     std::cout << "\n========================================" << std::endl;
     std::cout << "God Mode: " << (godMode ? "ON" : "OFF") << std::endl;
@@ -141,9 +146,6 @@ void Trainer::ToggleGodMode() {
         int currentHealth = Memory::Read<int>(healthAddress);
         int currentArmor = Memory::Read<int>(armorAddress);
         
-        char buffer[256];
-        sprintf_s(buffer, "Before: Health=%d, Armor=%d", currentHealth, currentArmor);
-        LogToFile(buffer);
         
         std::cout << "  Current Health: " << currentHealth << ", Armor: " << currentArmor << std::endl;
         std::cout.flush();
@@ -158,8 +160,6 @@ void Trainer::ToggleGodMode() {
         int newHealth = Memory::Read<int>(healthAddress);
         int newArmor = Memory::Read<int>(armorAddress);
         
-        sprintf_s(buffer, "After: Health=%d, Armor=%d", newHealth, newArmor);
-        LogToFile(buffer);
         
         std::cout << "  New Health: " << newHealth << ", Armor: " << newArmor << std::endl;
         std::cout << "========================================\n" << std::endl;
@@ -193,19 +193,12 @@ void Trainer::ToggleNoRecoil() {
     std::cout << "========================================\n" << std::endl;
     std::cout.flush();
     
-    // This would require patching recoil-related instructions
-    // Need to find the recoil code in the game
-}
-
-void Trainer::AddHealth(int amount) {
-    if (healthAddress) {
-        int currentHealth = Memory::Read<int>(healthAddress);
-        SetHealth(currentHealth + amount);
-        std::cout << "\n========================================" << std::endl;
-        std::cout << "Added " << amount << " health." << std::endl;
-        std::cout << "Old health: " << currentHealth << " -> New health: " << (currentHealth + amount) << std::endl;
-        std::cout << "========================================\n" << std::endl;
-        std::cout.flush();
+    if (noRecoil && recoilPatchAddress != 0) {
+        ApplyRecoilPatch();
+    } else if (!noRecoil && recoilPatched) {
+        RestoreRecoilBytes();
+    } else if (recoilPatchAddress == 0) {
+        std::cout << "  WARNING: Recoil patch address not found" << std::endl;
     }
 }
 
@@ -269,19 +262,187 @@ void Trainer::UpdatePlayerData() {
         // Keep assault rifle ammo at max (100 in Assault Cube)
         SetAmmo(100);
     }
+    
+    if (regenHealth && healthAddress) {
+        // Regenerative health: maintain minimum 75 HP/Armor
+        int currentHealth = Memory::Read<int>(healthAddress);
+        if (currentHealth < 75) {
+            SetHealth(75);
+        }
+        int currentArmor = Memory::Read<int>(armorAddress);
+        if (currentArmor < 75) {
+            SetArmor(75);
+        }
+    }
+}
+
+// Process overlay input (mouse clicks)
+void Trainer::ProcessOverlayInput() {
+    if (!uiRenderer) return;
+    
+    // Check for INSERT key to toggle menu visibility
+    static bool insertPressed = false;
+    if (GetAsyncKeyState(VK_INSERT) & 0x8000) {
+        if (!insertPressed) {
+            uiRenderer->ToggleMenu();
+            insertPressed = true;
+        }
+    } else {
+        insertPressed = false;
+    }
+    
+    // Only process other keys if menu is visible
+    if (!uiRenderer->IsMenuVisible()) return;
+    
+    // UP arrow - navigate up
+    static bool upPressed = false;
+    if (GetAsyncKeyState(VK_UP) & 0x8000) {
+        if (!upPressed) {
+            uiRenderer->HandleKeyUp();
+            upPressed = true;
+        }
+    } else {
+        upPressed = false;
+    }
+    
+    // DOWN arrow - navigate down
+    static bool downPressed = false;
+    if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
+        if (!downPressed) {
+            uiRenderer->HandleKeyDown();
+            downPressed = true;
+        }
+    } else {
+        downPressed = false;
+    }
+    
+    // ENTER - activate selected item
+    static bool enterPressed = false;
+    if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
+        if (!enterPressed) {
+            bool unloadRequested = uiRenderer->HandleKeyEnter();
+            if (unloadRequested) {
+                RequestUnload();
+            }
+            enterPressed = true;
+        }
+    } else {
+        enterPressed = false;
+    }
+}
+
+// Build feature toggles for UI
+std::vector<FeatureToggle> Trainer::BuildFeatureToggles() {
+    std::vector<FeatureToggle> toggles;
+    
+    // God Mode toggle
+    FeatureToggle godModeToggle;
+    godModeToggle.name = "God Mode";
+    godModeToggle.description = "Invincibility - maintain 100 HP/Armor";
+    godModeToggle.onToggle = [this]() { this->ToggleGodMode(); };
+    godModeToggle.isActive = [this]() { return this->godMode.load(); };
+    toggles.push_back(godModeToggle);
+    
+    // Infinite Ammo toggle
+    FeatureToggle infAmmoToggle;
+    infAmmoToggle.name = "Infinite Ammo";
+    infAmmoToggle.description = "Never run out of bullets";
+    infAmmoToggle.onToggle = [this]() { this->ToggleInfiniteAmmo(); };
+    infAmmoToggle.isActive = [this]() { return this->infiniteAmmo.load(); };
+    toggles.push_back(infAmmoToggle);
+    
+    // No Recoil toggle
+    FeatureToggle noRecoilToggle;
+    noRecoilToggle.name = "No Recoil";
+    noRecoilToggle.description = "Remove weapon recoil";
+    noRecoilToggle.onToggle = [this]() { this->ToggleNoRecoil(); };
+    noRecoilToggle.isActive = [this]() { return this->noRecoil.load(); };
+    toggles.push_back(noRecoilToggle);
+    
+    // Regen Health toggle
+    FeatureToggle regenToggle;
+    regenToggle.name = "Regen Health";
+    regenToggle.description = "Auto-restore to 75 HP/Armor";
+    regenToggle.onToggle = [this]() { this->ToggleRegenHealth(); };
+    regenToggle.isActive = [this]() { return this->regenHealth.load(); };
+    toggles.push_back(regenToggle);
+    
+    return toggles;
+}
+
+// Get current player stats
+PlayerStats Trainer::GetPlayerStats() {
+    PlayerStats stats;
+    stats.health = healthAddress ? Memory::Read<int>(healthAddress) : 0;
+    stats.armor = armorAddress ? Memory::Read<int>(armorAddress) : 0;
+    stats.ammo = ammoAddress ? Memory::Read<int>(ammoAddress) : 0;
+    return stats;
+}
+
+// Toggle functions
+void Trainer::ToggleRegenHealth() {
+    regenHealth = !regenHealth;
+    std::cout << "Regen Health: " << (regenHealth ? "ON" : "OFF") << std::endl;
+}
+
+void Trainer::InstantRefillHealth() {
+    if (healthAddress && armorAddress) {
+        SetHealth(100);
+        SetArmor(100);
+        std::cout << "Health refilled to 100!" << std::endl;
+    }
+}
+
+void Trainer::RequestUnload() {
+    std::cout << "Unload requested - shutting down trainer..." << std::endl;
+    isRunning = false;
+}
+
+// Find recoil patch address using pattern scanning
+bool Trainer::FindRecoilPatchAddress() {
+    // TODO: Implement pattern scanning to find recoil code
+    // For now, return false - will need Cheat Engine analysis
+    recoilPatchAddress = 0;
+    return false;
+}
+
+// Apply recoil patch (NOP the recoil instruction)
+void Trainer::ApplyRecoilPatch() {
+    if (recoilPatchAddress == 0 || recoilPatched) return;
+    
+    // Save original bytes (assuming 5-byte instruction)
+    originalRecoilBytes.resize(5);
+    for (size_t i = 0; i < 5; i++) {
+        originalRecoilBytes[i] = Memory::Read<BYTE>(recoilPatchAddress + i);
+    }
+    
+    // Apply NOP patch
+    BYTE nops[5] = {0x90, 0x90, 0x90, 0x90, 0x90};
+    for (size_t i = 0; i < 5; i++) {
+        Memory::Write<BYTE>(recoilPatchAddress + i, nops[i]);
+    }
+    
+    recoilPatched = true;
+    std::cout << "Recoil patch applied at 0x" << std::hex << recoilPatchAddress << std::dec << std::endl;
+}
+
+// Restore original recoil bytes
+void Trainer::RestoreRecoilBytes() {
+    if (recoilPatchAddress == 0 || !recoilPatched) return;
+    
+    for (size_t i = 0; i < originalRecoilBytes.size(); i++) {
+        Memory::Write<BYTE>(recoilPatchAddress + i, originalRecoilBytes[i]);
+    }
+    
+    recoilPatched = false;
+    std::cout << "Recoil patch restored" << std::endl;
 }
 
 void Trainer::DisplayStatus() {
-    system("cls");
+    // Deprecated - overlay handles display now
     std::cout << "=== Assault Cube Trainer ===" << std::endl;
-    std::cout << "Module Base: 0x" << std::hex << moduleBase << std::dec << std::endl;
-    std::cout << "\nStatus:" << std::endl;
     std::cout << "God Mode: " << (godMode ? "ON" : "OFF") << std::endl;
     std::cout << "Infinite Ammo: " << (infiniteAmmo ? "ON" : "OFF") << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
-    
-    if (healthAddress) {
-        int health = Memory::Read<int>(healthAddress);
-        std::cout << "\nHealth: " << health << std::endl;
-    }
+    std::cout << "Regen Health: " << (regenHealth ? "ON" : "OFF") << std::endl;
 }

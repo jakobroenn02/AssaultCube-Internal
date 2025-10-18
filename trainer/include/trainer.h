@@ -3,22 +3,41 @@
 
 #include <Windows.h>
 #include <cstdint>
+#include <vector>
+#include <atomic>
+#include <chrono>
+
+// Forward declare UIRenderer to avoid circular dependency
+class UIRenderer;
+struct FeatureToggle;
+struct PlayerStats;
 
 class Trainer {
 private:
     uintptr_t moduleBase;
     bool isRunning;
+    UIRenderer* uiRenderer;
+    HWND gameWindowHandle;
     
-    // Feature toggles
-    bool godMode;
-    bool infiniteAmmo;
-    bool noRecoil;
+    // Feature toggles (thread-safe)
+    std::atomic<bool> godMode;
+    std::atomic<bool> infiniteAmmo;
+    std::atomic<bool> noRecoil;
+    std::atomic<bool> regenHealth;
+    
+    // Recoil patch data
+    uintptr_t recoilPatchAddress;
+    std::vector<BYTE> originalRecoilBytes;
+    bool recoilPatched;
     
     // Player addresses (to be found)
     uintptr_t playerBase;
     uintptr_t healthAddress;
     uintptr_t armorAddress;
     uintptr_t ammoAddress;
+    
+    // Frame timing
+    std::chrono::steady_clock::time_point lastRenderTime;
     
     // Original bytes for patching/unpatching
     std::vector<BYTE> originalHealthBytes;
@@ -70,11 +89,17 @@ public:
     // Main loop
     void Run();
     
+    // Overlay input processing
+    void ProcessOverlayInput();
+    
     // Feature functions
     void ToggleGodMode();
     void ToggleInfiniteAmmo();
     void ToggleNoRecoil();
-    void AddHealth(int amount);
+    void ToggleRegenHealth();
+    void InstantRefillHealth();
+    void RequestUnload();
+    
     void SetHealth(int value);
     void SetArmor(int value);
     void SetAmmo(int value);
@@ -83,10 +108,19 @@ public:
     bool FindPlayerBase();
     bool FindHealthAddress();
     bool FindAmmoAddress();
+    bool FindRecoilPatchAddress();
+    
+    // Recoil patching
+    void ApplyRecoilPatch();
+    void RestoreRecoilBytes();
     
     // Utility
     void UpdatePlayerData();
     void DisplayStatus();
+    
+    // Build feature toggles for UI
+    std::vector<FeatureToggle> BuildFeatureToggles();
+    PlayerStats GetPlayerStats();
 };
 
 #endif // TRAINER_H
