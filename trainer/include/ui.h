@@ -73,7 +73,7 @@ public:
     
     // Input handling
     bool HandleMouseClick(int x, int y);
-    bool HandleMouseMove(int x, int y);
+    void HandleMouseMove(int x, int y);
     
     // Get bounds for hit testing
     const std::vector<FeatureToggle>& GetToggles() const { return featureToggles; }
@@ -85,7 +85,7 @@ public:
     void RenderPlayerStats(int& yOffset, const PlayerStats& stats);
     void RenderUnloadButton(int& yOffset);
     void RenderText(int x, int y, const std::string& text, COLORREF color, HFONT font);
-    void RenderToggleButton(int x, int y, int width, int height, const std::string& text, bool isActive, bool isHovered);
+    void RenderToggleButton(int x, int y, int index, const FeatureToggle& toggle);
     
     // Cleanup
     void Shutdown();

@@ -201,18 +201,6 @@ void Trainer::ToggleNoRecoil() {
     }
 }
 
-void Trainer::AddHealth(int amount) {
-    if (healthAddress) {
-        int currentHealth = Memory::Read<int>(healthAddress);
-        SetHealth(currentHealth + amount);
-        std::cout << "\n========================================" << std::endl;
-        std::cout << "Added " << amount << " health." << std::endl;
-        std::cout << "Old health: " << currentHealth << " -> New health: " << (currentHealth + amount) << std::endl;
-        std::cout << "========================================\n" << std::endl;
-        std::cout.flush();
-    }
-}
-
 void Trainer::SetHealth(int value) {
     if (healthAddress) {
         Memory::Write<int>(healthAddress, value);

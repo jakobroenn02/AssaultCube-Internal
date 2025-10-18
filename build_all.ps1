@@ -56,9 +56,9 @@ try {
     # Create build directory
     New-Item -ItemType Directory -Force -Path ".\build" | Out-Null
     
-    # Build the DLL (excluding ui.cpp to avoid issues)
+    # Build the DLL (including ui.cpp for overlay support)
     Write-Host "  Compiling C++ files..." -ForegroundColor DarkGray
-    $buildCmd = "`"$vcvars`" && cd build && cl.exe /LD /MT /std:c++17 /EHsc /I..\include ..\src\dllmain.cpp ..\src\trainer.cpp ..\src\pch.cpp psapi.lib user32.lib /link /OUT:actrainer.dll"
+    $buildCmd = "`"$vcvars`" && cd build && cl.exe /LD /MT /std:c++17 /EHsc /I..\include ..\src\dllmain.cpp ..\src\trainer.cpp ..\src\ui.cpp ..\src\pch.cpp psapi.lib user32.lib gdi32.lib /link /OUT:actrainer.dll"
     
     cmd /c $buildCmd 2>&1 | Out-Null
     

@@ -70,23 +70,6 @@ bool UIRenderer::Initialize(HWND targetWindow) {
     
     return true;
 }
-                             CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                             DEFAULT_PITCH | FF_DONTCARE, "Arial");
-    
-    smallFont = CreateFontA(11, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                            CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                            DEFAULT_PITCH | FF_DONTCARE, "Arial");
-    
-    // Get window dimensions
-    RECT rect;
-    if (GetClientRect(gameWindow, &rect)) {
-        windowWidth = rect.right - rect.left;
-        windowHeight = rect.bottom - rect.top;
-    }
-    
-    return true;
-}
 
 void UIRenderer::RenderPanel() {
     if (!deviceContext) return;
@@ -116,105 +99,188 @@ void UIRenderer::RenderText(int x, int y, const std::string& text, COLORREF colo
     SelectObject(deviceContext, oldFont);
 }
 
-void UIRenderer::RenderFeatureStatus(int yOffset, bool godMode, bool infiniteAmmo, bool noRecoil) {
-    if (!deviceContext) return;
+void UIRenderer::Render(const std::vector<FeatureToggle>& toggles, const PlayerStats& stats) {
+    if (!gameWindow) return;
     
-    int x = panelX + 15;
-    int y = panelY + yOffset;
+    // Get fresh device context each frame
+    HDC currentDC = GetDC(gameWindow);
+    if (!currentDC) return;
     
-    // Header
-    RenderText(x, y, "=== FEATURES ===", UIColors::HEADER, headerFont);
-    y += 25;
+    HDC oldDC = deviceContext;
+    deviceContext = currentDC;
     
-    // God Mode
-    std::string godModeStatus = godMode ? "[ON]  God Mode" : "[OFF] God Mode";
-    RenderText(x, y, godModeStatus, godMode ? UIColors::ACTIVE : UIColors::INACTIVE, normalFont);
-    y += 20;
+    // Store toggles for hit testing
+    featureToggles = toggles;
     
-    // Infinite Ammo
-    std::string ammoStatus = infiniteAmmo ? "[ON]  Infinite Ammo" : "[OFF] Infinite Ammo";
-    RenderText(x, y, ammoStatus, infiniteAmmo ? UIColors::ACTIVE : UIColors::INACTIVE, normalFont);
-    y += 20;
+    // Draw main panel
+    RenderPanel();
     
-    // No Recoil
-    std::string recoilStatus = noRecoil ? "[ON]  No Recoil" : "[OFF] No Recoil";
-    RenderText(x, y, recoilStatus, noRecoil ? UIColors::ACTIVE : UIColors::INACTIVE, normalFont);
+    // Render title
+    int yOffset = 10;
+    RenderText(panelX + 15, panelY + yOffset, "AC Trainer", UIColors::HEADER, headerFont);
+    yOffset += 35;
+    
+    // Render sections
+    RenderFeatureToggles(yOffset);
+    RenderPlayerStats(yOffset, stats);
+    RenderUnloadButton(yOffset);
+    
+    // Release the fresh DC
+    ReleaseDC(gameWindow, currentDC);
+    deviceContext = oldDC;
 }
 
-void UIRenderer::RenderPlayerStats(int yOffset, int health, int armor, int ammo) {
+void UIRenderer::RenderFeatureToggles(int& yOffset) {
     if (!deviceContext) return;
     
     int x = panelX + 15;
     int y = panelY + yOffset;
     
     // Header
-    RenderText(x, y, "=== STATS ===", UIColors::HEADER, headerFont);
+    RenderText(x, y, "=== FEATURES ===", UIColors::HEADER, normalFont);
+    y += 25;
+    
+    // Render each toggle button
+    for (size_t i = 0; i < featureToggles.size(); i++) {
+        RenderToggleButton(x, y, i, featureToggles[i]);
+        y += 35;
+    }
+    
+    yOffset = y - panelY + 10;
+}
+
+void UIRenderer::RenderToggleButton(int x, int y, int index, const FeatureToggle& toggle) {
+    if (!deviceContext) return;
+    
+    int buttonWidth = 300;
+    int buttonHeight = 30;
+    
+    // Update bounds for hit testing
+    featureToggles[index].bounds = { x, y, x + buttonWidth, y + buttonHeight };
+    
+    // Choose brush based on hover state
+    HBRUSH brush = (index == hoveredToggleIndex) ? buttonHoverBrush : buttonBrush;
+    
+    // Draw button background
+    RECT buttonRect = { x, y, x + buttonWidth, y + buttonHeight };
+    FillRect(deviceContext, &buttonRect, brush);
+    
+    // Draw button border
+    HPEN borderPen = CreatePen(PS_SOLID, 1, UIColors::BORDER);
+    HPEN oldPen = (HPEN)SelectObject(deviceContext, borderPen);
+    Rectangle(deviceContext, x, y, x + buttonWidth, y + buttonHeight);
+    SelectObject(deviceContext, oldPen);
+    DeleteObject(borderPen);
+    
+    // Get active state
+    bool isActive = toggle.isActive ? toggle.isActive() : false;
+    
+    // Draw status indicator
+    HBRUSH statusBrush = isActive ? activeFeatureBrush : inactiveFeatureBrush;
+    RECT statusRect = { x + 5, y + 8, x + 20, y + 22 };
+    FillRect(deviceContext, &statusRect, statusBrush);
+    
+    // Draw feature name
+    std::string displayName = "[" + std::string(isActive ? "ON" : "OFF") + "] " + toggle.name;
+    RenderText(x + 25, y + 7, displayName, UIColors::TEXT, normalFont);
+}
+
+void UIRenderer::RenderPlayerStats(int& yOffset, const PlayerStats& stats) {
+    if (!deviceContext) return;
+    
+    int x = panelX + 15;
+    int y = panelY + yOffset;
+    
+    // Header
+    RenderText(x, y, "=== STATS ===", UIColors::HEADER, normalFont);
     y += 25;
     
     // Health
     char healthStr[64];
-    sprintf_s(healthStr, sizeof(healthStr), "Health: %d/100", health);
-    COLORREF healthColor = (health > 70) ? UIColors::ACTIVE : (health > 30) ? RGB(255, 200, 0) : RGB(255, 100, 100);
+    sprintf_s(healthStr, sizeof(healthStr), "Health: %d/100", stats.health);
+    COLORREF healthColor = (stats.health > 70) ? UIColors::ACTIVE : 
+                          (stats.health > 30) ? RGB(255, 200, 0) : RGB(255, 100, 100);
     RenderText(x, y, healthStr, healthColor, normalFont);
     y += 20;
     
     // Armor
     char armorStr[64];
-    sprintf_s(armorStr, sizeof(armorStr), "Armor:  %d/100", armor);
-    COLORREF armorColor = (armor > 50) ? UIColors::ACTIVE : UIColors::TEXT;
+    sprintf_s(armorStr, sizeof(armorStr), "Armor:  %d/100", stats.armor);
+    COLORREF armorColor = (stats.armor > 50) ? UIColors::ACTIVE : UIColors::TEXT;
     RenderText(x, y, armorStr, armorColor, normalFont);
     y += 20;
     
     // Ammo
     char ammoStr[64];
-    sprintf_s(ammoStr, sizeof(ammoStr), "Ammo:   %d", ammo);
+    sprintf_s(ammoStr, sizeof(ammoStr), "Ammo:   %d", stats.ammo);
     RenderText(x, y, ammoStr, UIColors::TEXT, normalFont);
+    y += 20;
+    
+    yOffset = y - panelY + 10;
 }
 
-void UIRenderer::RenderHotkeyHelp(int yOffset) {
+void UIRenderer::RenderUnloadButton(int& yOffset) {
     if (!deviceContext) return;
     
     int x = panelX + 15;
     int y = panelY + yOffset;
+    int buttonWidth = 300;
+    int buttonHeight = 30;
     
-    // Header
-    RenderText(x, y, "=== HOTKEYS ===", UIColors::HEADER, smallFont);
-    y += 20;
+    // Update unload button bounds
+    unloadButtonRect = { x, y, x + buttonWidth, y + buttonHeight };
     
-    RenderText(x, y, "F1: God Mode", UIColors::INACTIVE, smallFont);
-    y += 16;
-    RenderText(x, y, "F2: Infinite Ammo", UIColors::INACTIVE, smallFont);
-    y += 16;
-    RenderText(x, y, "F3: No Recoil", UIColors::INACTIVE, smallFont);
-    y += 16;
-    RenderText(x, y, "F4: Add Health", UIColors::INACTIVE, smallFont);
-    y += 16;
-    RenderText(x, y, "END: Unload", RGB(255, 100, 100), smallFont);
+    // Draw button
+    HBRUSH brush = CreateSolidBrush(RGB(180, 50, 50));
+    RECT buttonRect = { x, y, x + buttonWidth, y + buttonHeight };
+    FillRect(deviceContext, &buttonRect, brush);
+    DeleteObject(brush);
+    
+    // Draw border
+    HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(255, 100, 100));
+    HPEN oldPen = (HPEN)SelectObject(deviceContext, borderPen);
+    Rectangle(deviceContext, x, y, x + buttonWidth, y + buttonHeight);
+    SelectObject(deviceContext, oldPen);
+    DeleteObject(borderPen);
+    
+    // Draw text
+    RenderText(x + 110, y + 7, "UNLOAD TRAINER", RGB(255, 255, 255), normalFont);
+    
+    yOffset = y - panelY + buttonHeight + 10;
 }
 
-void UIRenderer::Render(bool godMode, bool infiniteAmmo, bool noRecoil,
-                        int health, int armor, int ammo) {
-    if (!gameWindow) return;
+bool UIRenderer::HandleMouseClick(int x, int y) {
+    // Check unload button
+    if (x >= unloadButtonRect.left && x <= unloadButtonRect.right &&
+        y >= unloadButtonRect.top && y <= unloadButtonRect.bottom) {
+        return true; // Signal unload
+    }
     
-    // Get fresh device context each frame (it may have been invalidated)
-    HDC currentDC = GetDC(gameWindow);
-    if (!currentDC) return;
+    // Check feature toggles
+    for (const auto& toggle : featureToggles) {
+        if (x >= toggle.bounds.left && x <= toggle.bounds.right &&
+            y >= toggle.bounds.top && y <= toggle.bounds.bottom) {
+            if (toggle.onToggle) {
+                toggle.onToggle();
+            }
+            break;
+        }
+    }
     
-    // Temporarily use the fresh DC
-    HDC oldDC = deviceContext;
-    deviceContext = currentDC;
+    return false;
+}
+
+void UIRenderer::HandleMouseMove(int x, int y) {
+    hoveredToggleIndex = -1;
     
-    // Draw main panel
-    RenderPanel();
-    
-    // Render sections
-    RenderFeatureStatus(10, godMode, infiniteAmmo, noRecoil);
-    RenderPlayerStats(100, health, armor, ammo);
-    RenderHotkeyHelp(160);
-    
-    // Release the fresh DC
-    ReleaseDC(gameWindow, currentDC);
-    deviceContext = oldDC;
+    for (size_t i = 0; i < featureToggles.size(); i++) {
+        const auto& toggle = featureToggles[i];
+        if (x >= toggle.bounds.left && x <= toggle.bounds.right &&
+            y >= toggle.bounds.top && y <= toggle.bounds.bottom) {
+            hoveredToggleIndex = (int)i;
+            break;
+        }
+    }
 }
 
 void UIRenderer::Shutdown() {
@@ -234,6 +300,14 @@ void UIRenderer::Shutdown() {
     if (inactiveFeatureBrush) {
         DeleteObject(inactiveFeatureBrush);
         inactiveFeatureBrush = NULL;
+    }
+    if (buttonBrush) {
+        DeleteObject(buttonBrush);
+        buttonBrush = NULL;
+    }
+    if (buttonHoverBrush) {
+        DeleteObject(buttonHoverBrush);
+        buttonHoverBrush = NULL;
     }
     if (headerFont) {
         DeleteObject(headerFont);
