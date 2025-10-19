@@ -43,15 +43,16 @@ private:
     std::vector<BYTE> originalHealthBytes;
     std::vector<BYTE> originalAmmoBytes;
     
-    // Static offsets from addresses.md
-    static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x0017E0A8;
-    static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x18AC04;
-    static constexpr uintptr_t OFFSET_FOV = 0x18A7CC;
-    static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x18AC0C;
+    // Static offsets from addresses.md (updated)
+    static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x17B0B8;
+    static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x187C10;
+    static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x17AFE0;
+    static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x18EFE4;
     
     // Player offsets
     static constexpr uintptr_t OFFSET_HEALTH = 0xEC;
     static constexpr uintptr_t OFFSET_ARMOR = 0xF0;
+    static constexpr uintptr_t OFFSET_TEAM_ID = 0x30C;
     
     // Ammo offsets
     static constexpr uintptr_t OFFSET_AR_AMMO = 0x140;
@@ -61,7 +62,9 @@ private:
     static constexpr uintptr_t OFFSET_PISTOL_AMMO = 0x12C;
     static constexpr uintptr_t OFFSET_GRENADE_AMMO = 0x144;
     
-    // Position offsets
+    // Position offsets (vec3)
+    static constexpr uintptr_t OFFSET_VEC3_ORIGIN = 0x28;
+    static constexpr uintptr_t OFFSET_VEC3_HEAD = 0x4;
     static constexpr uintptr_t OFFSET_POS_X = 0x2C;
     static constexpr uintptr_t OFFSET_POS_Y = 0x30;
     static constexpr uintptr_t OFFSET_POS_Z = 0x28;
