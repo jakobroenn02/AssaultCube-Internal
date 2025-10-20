@@ -27,14 +27,7 @@ Trainer::~Trainer() {
         RestoreRecoilBytes();
     }
 
-    RemoveHooks();
-
-    // Clean up UI renderer
-    if (uiRenderer) {
-        uiRenderer->Shutdown();
-        delete uiRenderer;
-        uiRenderer = nullptr;
-    }
+    ShutdownOverlay();
 }
 
 bool Trainer::Initialize() {
@@ -110,7 +103,7 @@ void Trainer::Run() {
     std::cout << "\nTrainer is running with overlay support...\n" << std::endl;
     std::cout << "Press INSERT to show/hide menu" << std::endl;
     std::cout << "Use UP/DOWN arrows to navigate, ENTER to toggle" << std::endl;
-    
+
     while (isRunning) {
         // Update player data if features are active
         if (godMode || infiniteAmmo || regenHealth) {
@@ -120,8 +113,10 @@ void Trainer::Run() {
         // Sleep to reduce CPU usage
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    
+
     std::cout << "\nTrainer shutting down..." << std::endl;
+
+    ShutdownOverlay();
 }
 
 void Trainer::ToggleGodMode() {
@@ -382,4 +377,14 @@ void Trainer::DisplayStatus() {
     std::cout << "Infinite Ammo: " << (infiniteAmmo ? "ON" : "OFF") << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
     std::cout << "Regen Health: " << (regenHealth ? "ON" : "OFF") << std::endl;
+}
+
+void Trainer::ShutdownOverlay() {
+    RemoveHooks();
+
+    if (uiRenderer) {
+        uiRenderer->Shutdown();
+        delete uiRenderer;
+        uiRenderer = nullptr;
+    }
 }
