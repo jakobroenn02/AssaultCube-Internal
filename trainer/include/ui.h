@@ -2,28 +2,20 @@
 #define UI_H
 
 #include <Windows.h>
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>
-#include <cstdint>
 
-// UI Color Palette - Dark theme for comfortable viewing
-namespace UIColors {
-    static const COLORREF BACKGROUND = RGB(25, 28, 32);      // Very dark gray-blue
-    static const COLORREF BORDER = RGB(60, 70, 85);          // Subtle dark blue-gray border
-    static const COLORREF ACTIVE = RGB(80, 200, 120);        // Softer green (less bright)
-    static const COLORREF INACTIVE = RGB(100, 105, 110);     // Muted gray
-    static const COLORREF TEXT = RGB(180, 185, 190);         // Soft light gray (not white)
-    static const COLORREF HEADER = RGB(120, 160, 200);       // Muted cyan-blue
-    static const COLORREF BUTTON_BG = RGB(35, 38, 42);       // Slightly lighter than background
-    static const COLORREF BUTTON_HOVER = RGB(45, 50, 58);    // Subtle hover highlight
-}
+class Trainer;
+struct IDirect3DDevice9;
+struct ImFont;
+struct ImDrawList;
+struct ImVec2;
 
 // Feature toggle widget
 struct FeatureToggle {
     std::string name;
     std::string description;
-    RECT bounds;
     std::function<void()> onToggle;
     std::function<bool()> isActive;
 };
@@ -38,41 +30,41 @@ struct PlayerStats {
 class UIRenderer {
 private:
     HWND gameWindow;
-    HWND overlayWindow;    // Transparent overlay window
-    HDC deviceContext;
-    HDC memoryDC;          // Double buffer to prevent flicker
-    HBITMAP memoryBitmap;
-    HBITMAP oldBitmap;
-    HBRUSH backgroundBrush;
-    HBRUSH activeFeatureBrush;
-    HBRUSH inactiveFeatureBrush;
-    HBRUSH buttonBrush;
-    HBRUSH buttonHoverBrush;
-    HFONT headerFont;
-    HFONT normalFont;
-    HFONT smallFont;
-    
-    // UI dimensions
-    int windowWidth;
-    int windowHeight;
-    int panelX;
-    int panelY;
+    IDirect3DDevice9* device;
+
+    bool imguiInitialized;
+    bool menuVisible;
+    bool insertHeld;
+    bool upHeld;
+    bool downHeld;
+    bool enterHeld;
+
+    int selectedIndex;
     int panelWidth;
-    int panelHeight;
-    
-    // Interactive elements
+    int panelPadding;
+    int sectionSpacing;
+
+    ImFont* headerFont;
+    ImFont* textFont;
+    ImFont* smallFont;
+
     std::vector<FeatureToggle> featureToggles;
-    RECT unloadButtonRect;
-    int selectedIndex;     // For keyboard navigation (-1 = unload button)
-    bool menuVisible;      // Menu visibility toggle
-    
+
+    void InitializeImGui(IDirect3DDevice9* d3dDevice);
+    void UpdateMenuState();
+    void UpdateNavigation(Trainer& trainer);
+    void DrawMenu(const PlayerStats& stats);
+    float DrawFeatureToggles(struct ImDrawList* drawList, const struct ImVec2& start);
+    float DrawPlayerStats(struct ImDrawList* drawList, const struct ImVec2& start, const PlayerStats& stats);
+    float DrawUnloadButton(struct ImDrawList* drawList, const struct ImVec2& start);
+
 public:
     UIRenderer();
     ~UIRenderer();
-    
+
     // Initialize UI system
     bool Initialize(HWND targetWindow);
-    
+
     // Render the main UI panel with interactive toggles
     void Render(const std::vector<FeatureToggle>& toggles, const PlayerStats& stats);
     
@@ -101,6 +93,9 @@ public:
     void RenderText(int x, int y, const std::string& text, COLORREF color, HFONT font);
     void RenderToggleButton(int x, int y, int index, const FeatureToggle& toggle);
     
+    // this should may or may not be here
+    void Render(IDirect3DDevice9* device, Trainer& trainer);
+
     // Cleanup
     void Shutdown();
 };

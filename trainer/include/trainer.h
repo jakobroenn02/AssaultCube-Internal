@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <vector>
 #include <atomic>
-#include <chrono>
 
 // Forward declare UIRenderer to avoid circular dependency
 class UIRenderer;
