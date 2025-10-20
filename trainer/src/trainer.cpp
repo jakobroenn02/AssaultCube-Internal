@@ -2,6 +2,7 @@
 #include "trainer.h"
 #include "ui.h"
 #include "memory.h"
+#include "d3d_hook.h"
 #include <iostream>
 
 Trainer::Trainer(uintptr_t base) 
@@ -34,17 +35,27 @@ Trainer::~Trainer() {
         delete uiRenderer;
         uiRenderer = nullptr;
     }
+
+    RemoveHooks();
 }
 
 bool Trainer::Initialize() {
     std::cout << "Initializing trainer..." << std::endl;
-    
+
     // Get the game window handle
     gameWindowHandle = FindWindowA(NULL, "AssaultCube");
     if (!gameWindowHandle) {
         gameWindowHandle = FindWindowA("AssaultCube", NULL);
     }
-    
+
+    if (gameWindowHandle) {
+        if (!InstallHooks(gameWindowHandle)) {
+            std::cout << "WARNING: Failed to install Direct3D hooks" << std::endl;
+        } else {
+            std::cout << "Direct3D hooks installed" << std::endl;
+        }
+    }
+
     // Initialize UI Renderer
     if (gameWindowHandle) {
         uiRenderer = new UIRenderer();
