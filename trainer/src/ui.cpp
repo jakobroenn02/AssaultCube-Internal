@@ -2,6 +2,7 @@
 #include "ui.h"
 #include <cstdio>
 #include <thread>
+#include <windowsx.h>
 
 // Window class name for overlay
 static const char* OVERLAY_CLASS_NAME = "ACTrainerOverlay";
@@ -403,7 +404,22 @@ void UIRenderer::RenderUnloadButton(int& yOffset) {
 }
 
 void UIRenderer::ToggleMenu() {
-    menuVisible = !menuVisible;
+    SetMenuVisible(!menuVisible);
+}
+
+void UIRenderer::SetMenuVisible(bool visible) {
+    if (menuVisible == visible) {
+        return;
+    }
+
+    menuVisible = visible;
+
+    if (!menuVisible) {
+        selectedIndex = 0;
+        if (overlayWindow) {
+            ShowWindow(overlayWindow, SW_HIDE);
+        }
+    }
 }
 
 void UIRenderer::HandleKeyDown() {
@@ -432,7 +448,7 @@ void UIRenderer::HandleKeyUp() {
 
 bool UIRenderer::HandleKeyEnter() {
     if (!menuVisible) return false;
-    
+
     // If unload button is selected
     if (selectedIndex == -1) {
         return true; // Signal unload
@@ -444,8 +460,112 @@ bool UIRenderer::HandleKeyEnter() {
             featureToggles[selectedIndex].onToggle();
         }
     }
-    
+
     return false;
+}
+
+bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
+    requestUnload = false;
+
+    if (!menuVisible) {
+        // When menu is hidden, only consume raw input to avoid cursor issues
+        if (msg.message == WM_INPUT) {
+            return true;
+        }
+        return false;
+    }
+
+    bool handled = false;
+
+    switch (msg.message) {
+    case WM_INPUT:
+        handled = true;
+        break;
+
+    case WM_MOUSEMOVE: {
+        POINT cursor = { GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam) };
+        handled = true;
+
+        int hoverIndex = -2;
+        for (size_t i = 0; i < featureToggles.size(); ++i) {
+            if (PtInRect(&featureToggles[i].bounds, cursor)) {
+                hoverIndex = static_cast<int>(i);
+                break;
+            }
+        }
+
+        if (hoverIndex >= 0) {
+            selectedIndex = hoverIndex;
+        } else if (PtInRect(&unloadButtonRect, cursor)) {
+            selectedIndex = -1;
+        }
+        break;
+    }
+
+    case WM_LBUTTONDOWN: {
+        POINT cursor = { GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam) };
+        handled = true;
+
+        if (PtInRect(&unloadButtonRect, cursor)) {
+            selectedIndex = -1;
+            requestUnload = true;
+            break;
+        }
+
+        for (size_t i = 0; i < featureToggles.size(); ++i) {
+            if (PtInRect(&featureToggles[i].bounds, cursor)) {
+                selectedIndex = static_cast<int>(i);
+                if (featureToggles[i].onToggle) {
+                    featureToggles[i].onToggle();
+                }
+                break;
+            }
+        }
+        break;
+    }
+
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
+        bool initialPress = ((msg.lParam & (1 << 30)) == 0);
+        switch (msg.wParam) {
+        case VK_UP:
+            if (initialPress) {
+                HandleKeyUp();
+            }
+            handled = true;
+            break;
+        case VK_DOWN:
+            if (initialPress) {
+                HandleKeyDown();
+            }
+            handled = true;
+            break;
+        case VK_RETURN:
+        case VK_SPACE:
+            if (initialPress) {
+                if (HandleKeyEnter()) {
+                    requestUnload = true;
+                }
+            }
+            handled = true;
+            break;
+        case VK_ESCAPE:
+            if (initialPress) {
+                SetMenuVisible(false);
+            }
+            handled = true;
+            break;
+        default:
+            break;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    return handled;
 }
 
 void UIRenderer::Shutdown() {

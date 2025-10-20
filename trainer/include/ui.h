@@ -79,12 +79,16 @@ public:
     // Menu visibility
     void ToggleMenu();
     bool IsMenuVisible() const { return menuVisible; }
-    
+    void SetMenuVisible(bool visible);
+
     // Keyboard navigation
     void HandleKeyDown();   // Arrow DOWN
     void HandleKeyUp();     // Arrow UP
     bool HandleKeyEnter();  // ENTER key - returns true if unload requested
-    
+
+    // Message pump input handling
+    bool ProcessInput(MSG& msg, bool& requestUnload);
+
     // Get selected item info
     int GetSelectedIndex() const { return selectedIndex; }
     size_t GetToggleCount() const { return featureToggles.size(); }
