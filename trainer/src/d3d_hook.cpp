@@ -5,6 +5,7 @@
 #include <mutex>
 
 #include "MinHook.h"
+#include "ui.h"
 
 namespace {
 
@@ -16,6 +17,8 @@ std::mutex g_hookMutex;
 PresentFn g_originalPresent = nullptr;
 void* g_presentTarget = nullptr;
 bool g_hooksInstalled = false;
+Trainer* g_trainer = nullptr;
+UIRenderer* g_uiRenderer = nullptr;
 
 struct DeviceResources {
     IDirect3D9* d3d = nullptr;
@@ -109,7 +112,10 @@ bool CreateTemporaryDevice(HWND gameWindow, DeviceResources& resources) {
 
 HRESULT APIENTRY PresentDetour(IDirect3DDevice9* device, const RECT* srcRect, const RECT* dstRect,
                                HWND overrideWindow, const RGNDATA* dirtyRegion) {
-    // TODO: Overlay rendering will happen here.
+    if (g_uiRenderer && g_trainer) {
+        g_uiRenderer->Render(device, *g_trainer);
+    }
+
     if (g_originalPresent) {
         return g_originalPresent(device, srcRect, dstRect, overrideWindow, dirtyRegion);
     }
@@ -118,10 +124,12 @@ HRESULT APIENTRY PresentDetour(IDirect3DDevice9* device, const RECT* srcRect, co
 
 } // namespace
 
-bool InstallHooks(HWND gameWindow) {
+bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer) {
     std::lock_guard<std::mutex> lock(g_hookMutex);
 
     if (g_hooksInstalled) {
+        g_trainer = trainer;
+        g_uiRenderer = renderer;
         return true;
     }
 
@@ -163,6 +171,8 @@ bool InstallHooks(HWND gameWindow) {
 
     g_presentTarget = presentTarget;
     g_hooksInstalled = true;
+    g_trainer = trainer;
+    g_uiRenderer = renderer;
     return true;
 }
 
@@ -183,4 +193,6 @@ void RemoveHooks() {
     g_presentTarget = nullptr;
     g_originalPresent = nullptr;
     g_hooksInstalled = false;
+    g_trainer = nullptr;
+    g_uiRenderer = nullptr;
 }

@@ -2,5 +2,8 @@
 
 #include <Windows.h>
 
-bool InstallHooks(HWND gameWindow);
+class Trainer;
+class UIRenderer;
+
+bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer);
 void RemoveHooks();
