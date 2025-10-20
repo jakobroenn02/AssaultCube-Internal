@@ -83,7 +83,9 @@ private:
     // Other offsets
     static constexpr uintptr_t OFFSET_AUTO_SHOOT = 0x204;
     static constexpr uintptr_t OFFSET_PLAYER_NAME = 0x205;
-    
+
+    void ShutdownOverlay();
+
 public:
     Trainer(uintptr_t base);
     ~Trainer();
@@ -119,7 +121,7 @@ public:
     // Recoil patching
     void ApplyRecoilPatch();
     void RestoreRecoilBytes();
-    
+
     // Utility
     void UpdatePlayerData();
     void DisplayStatus();

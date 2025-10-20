@@ -96,6 +96,9 @@ public:
     // this should may or may not be here
     void Render(IDirect3DDevice9* device, Trainer& trainer);
 
+    void OnDeviceLost();
+    void OnDeviceReset(IDirect3DDevice9* d3dDevice);
+
     // Cleanup
     void Shutdown();
 };

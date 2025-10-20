@@ -386,6 +386,23 @@ bool UIRenderer::HandleKeyEnter() {
     ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 }
 
+void UIRenderer::OnDeviceLost() {
+    if (!imguiInitialized) {
+        return;
+    }
+
+    ImGui_ImplDX9_InvalidateDeviceObjects();
+}
+
+void UIRenderer::OnDeviceReset(IDirect3DDevice9* d3dDevice) {
+    if (!imguiInitialized) {
+        InitializeImGui(d3dDevice);
+        return;
+    }
+
+    device = d3dDevice;
+    ImGui_ImplDX9_CreateDeviceObjects();
+  
 bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
     requestUnload = false;
 

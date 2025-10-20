@@ -16,6 +16,7 @@ constexpr size_t kPresentVTableIndex = 17;
 std::mutex g_hookMutex;
 PresentFn g_originalPresent = nullptr;
 void* g_presentTarget = nullptr;
+void** g_presentVtableEntry = nullptr;
 bool g_hooksInstalled = false;
 Trainer* g_trainer = nullptr;
 UIRenderer* g_uiRenderer = nullptr;
@@ -110,16 +111,76 @@ bool CreateTemporaryDevice(HWND gameWindow, DeviceResources& resources) {
     return SUCCEEDED(hr);
 }
 
-HRESULT APIENTRY PresentDetour(IDirect3DDevice9* device, const RECT* srcRect, const RECT* dstRect,
-                               HWND overrideWindow, const RGNDATA* dirtyRegion) {
-    if (g_uiRenderer && g_trainer) {
-        g_uiRenderer->Render(device, *g_trainer);
+bool TryResetDevice(IDirect3DDevice9* device) {
+    if (!device) {
+        return false;
     }
 
-    if (g_originalPresent) {
-        return g_originalPresent(device, srcRect, dstRect, overrideWindow, dirtyRegion);
+    IDirect3DSwapChain9* swapChain = nullptr;
+    HRESULT hr = device->GetSwapChain(0, &swapChain);
+    if (FAILED(hr) || !swapChain) {
+        if (swapChain) {
+            swapChain->Release();
+        }
+        return false;
     }
-    return D3DERR_INVALIDCALL;
+
+    D3DPRESENT_PARAMETERS params = {};
+    hr = swapChain->GetPresentParameters(&params);
+    swapChain->Release();
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    hr = device->Reset(&params);
+    return SUCCEEDED(hr);
+}
+
+HRESULT APIENTRY PresentDetour(IDirect3DDevice9* device, const RECT* srcRect, const RECT* dstRect,
+                               HWND overrideWindow, const RGNDATA* dirtyRegion) {
+    if (!device) {
+        return g_originalPresent ? g_originalPresent(device, srcRect, dstRect, overrideWindow, dirtyRegion)
+                                 : D3DERR_INVALIDCALL;
+    }
+
+    if (!g_presentVtableEntry) {
+        void** vtable = *reinterpret_cast<void***>(device);
+        if (vtable) {
+            g_presentVtableEntry = &vtable[kPresentVTableIndex];
+        }
+    }
+
+    bool deviceReadyForRender = true;
+    if (g_uiRenderer && g_trainer) {
+        HRESULT coopResult = device->TestCooperativeLevel();
+        if (coopResult == D3DERR_DEVICELOST) {
+            g_uiRenderer->OnDeviceLost();
+            deviceReadyForRender = false;
+        } else if (coopResult == D3DERR_DEVICENOTRESET) {
+            g_uiRenderer->OnDeviceLost();
+            if (TryResetDevice(device)) {
+                g_uiRenderer->OnDeviceReset(device);
+                deviceReadyForRender = true;
+            } else {
+                deviceReadyForRender = false;
+            }
+        } else if (FAILED(coopResult)) {
+            deviceReadyForRender = false;
+        }
+
+        if (deviceReadyForRender) {
+            g_uiRenderer->Render(device, *g_trainer);
+        }
+    }
+
+    HRESULT result = g_originalPresent ? g_originalPresent(device, srcRect, dstRect, overrideWindow, dirtyRegion)
+                                       : D3DERR_INVALIDCALL;
+
+    if (g_uiRenderer && (result == D3DERR_DEVICELOST || result == D3DERR_DEVICENOTRESET)) {
+        g_uiRenderer->OnDeviceLost();
+    }
+
+    return result;
 }
 
 } // namespace
@@ -187,6 +248,17 @@ void RemoveHooks() {
         MH_DisableHook(g_presentTarget);
         MH_RemoveHook(g_presentTarget);
     }
+
+    if (g_presentVtableEntry && g_originalPresent) {
+        DWORD oldProtect = 0;
+        if (VirtualProtect(g_presentVtableEntry, sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            *g_presentVtableEntry = reinterpret_cast<void*>(g_originalPresent);
+            DWORD unused = 0;
+            VirtualProtect(g_presentVtableEntry, sizeof(void*), oldProtect, &unused);
+        }
+    }
+
+    g_presentVtableEntry = nullptr;
 
     MH_Uninitialize();
 
