@@ -16,6 +16,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 set(SOURCES
     src/dllmain.cpp
     src/trainer.cpp
+    src/d3d_hook.cpp
     src/pch.cpp
 )
 
@@ -23,7 +24,22 @@ set(SOURCES
 set(HEADERS
     include/trainer.h
     include/memory.h
+    include/d3d_hook.h
     src/pch.h
+)
+
+add_library(minhook STATIC
+    third_party/minhook/src/buffer.c
+    third_party/minhook/src/hook.c
+    third_party/minhook/src/trampoline.c
+    third_party/minhook/src/hde/hde32.c
+    third_party/minhook/src/hde/hde64.c
+)
+
+target_include_directories(minhook
+    PUBLIC ${PROJECT_SOURCE_DIR}/third_party/minhook/include
+    PRIVATE ${PROJECT_SOURCE_DIR}/third_party/minhook/src
+            ${PROJECT_SOURCE_DIR}/third_party/minhook/src/hde
 )
 
 # Create DLL
@@ -31,7 +47,9 @@ add_library(ACTrainer SHARED ${SOURCES} ${HEADERS})
 
 # Link libraries
 target_link_libraries(ACTrainer
+    minhook
     psapi
+    d3d9
 )
 
 # Precompiled header
