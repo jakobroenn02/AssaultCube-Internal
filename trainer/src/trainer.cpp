@@ -5,11 +5,12 @@
 #include "d3d_hook.h"
 #include <iostream>
 
-Trainer::Trainer(uintptr_t base) 
+Trainer::Trainer(uintptr_t base)
     : moduleBase(base),
       isRunning(true),
       uiRenderer(nullptr),
       gameWindowHandle(NULL),
+      messagePumpInputEnabled(false),
       godMode(false),
       infiniteAmmo(false),
       noRecoil(false),
@@ -105,6 +106,11 @@ void Trainer::Run() {
     std::cout << "Use UP/DOWN arrows to navigate, ENTER to toggle" << std::endl;
 
     while (isRunning) {
+        // Process overlay input (keyboard navigation) if message hook is unavailable
+        if (!IsMessagePumpInputEnabled()) {
+            ProcessOverlayInput();
+        }
+        
         // Update player data if features are active
         if (godMode || infiniteAmmo || regenHealth) {
             UpdatePlayerData();
@@ -117,6 +123,37 @@ void Trainer::Run() {
     std::cout << "\nTrainer shutting down..." << std::endl;
 
     ShutdownOverlay();
+}
+
+void Trainer::SetMessagePumpInputEnabled(bool enabled) {
+    messagePumpInputEnabled.store(enabled);
+}
+
+bool Trainer::ProcessMessage(MSG& msg, bool inputCaptureEnabled) {
+    if (!uiRenderer) {
+        return false;
+    }
+
+    bool requestUnload = false;
+    if (!inputCaptureEnabled) {
+        return false;
+    }
+
+    bool handled = uiRenderer->ProcessInput(msg, requestUnload);
+
+    if (requestUnload) {
+        RequestUnload();
+    }
+
+    return handled;
+}
+
+void Trainer::SetOverlayMenuVisible(bool visible) {
+    if (!uiRenderer) {
+        return;
+    }
+
+    uiRenderer->SetMenuVisible(visible);
 }
 
 void Trainer::ToggleGodMode() {
