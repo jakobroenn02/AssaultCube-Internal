@@ -66,6 +66,34 @@ public:
     bool Initialize(HWND targetWindow);
 
     // Render the main UI panel with interactive toggles
+    void Render(const std::vector<FeatureToggle>& toggles, const PlayerStats& stats);
+    
+    // Menu visibility
+    void ToggleMenu();
+    bool IsMenuVisible() const { return menuVisible; }
+    void SetMenuVisible(bool visible);
+
+    // Keyboard navigation
+    void HandleKeyDown();   // Arrow DOWN
+    void HandleKeyUp();     // Arrow UP
+    bool HandleKeyEnter();  // ENTER key - returns true if unload requested
+
+    // Message pump input handling
+    bool ProcessInput(MSG& msg, bool& requestUnload);
+
+    // Get selected item info
+    int GetSelectedIndex() const { return selectedIndex; }
+    size_t GetToggleCount() const { return featureToggles.size(); }
+    
+    // Render individual components
+    void RenderPanel();
+    void RenderFeatureToggles(int& yOffset);
+    void RenderPlayerStats(int& yOffset, const PlayerStats& stats);
+    void RenderUnloadButton(int& yOffset);
+    void RenderText(int x, int y, const std::string& text, COLORREF color, HFONT font);
+    void RenderToggleButton(int x, int y, int index, const FeatureToggle& toggle);
+    
+    // this should may or may not be here
     void Render(IDirect3DDevice9* device, Trainer& trainer);
 
     // Cleanup

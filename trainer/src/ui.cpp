@@ -1,7 +1,5 @@
 #include "pch.h"
 #include "ui.h"
-
-#include <cstdio>
 #include <d3d9.h>
 
 #include "trainer.h"
@@ -9,6 +7,27 @@
 #include "imgui.h"
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
+#include <cstdio>
+#include <thread>
+#include <windowsx.h>
+
+// Window class name for overlay
+static const char* OVERLAY_CLASS_NAME = "ACTrainerOverlay";
+
+// Window procedure for overlay window
+LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_PAINT: {
+            // Painting is handled manually in Render()
+            ValidateRect(hwnd, NULL);
+            return 0;
+        }
+        case WM_DESTROY:
+            return 0;
+        default:
+            return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+
 
 namespace {
 constexpr ImU32 ColorU32(int r, int g, int b, int a = 255) {
@@ -260,6 +279,23 @@ float UIRenderer::DrawUnloadButton(ImDrawList* drawList, const ImVec2& start) {
     return y + kButtonHeight + 6.0f;
 }
 
+void UIRenderer::ToggleMenu() {
+    SetMenuVisible(!menuVisible);
+}
+
+void UIRenderer::SetMenuVisible(bool visible) {
+    if (menuVisible == visible) {
+        return;
+    }
+
+    menuVisible = visible;
+
+    if (!menuVisible) {
+        selectedIndex = 0;
+        if (overlayWindow) {
+            ShowWindow(overlayWindow, SW_HIDE);
+        }
+    }
 void UIRenderer::DrawMenu(const PlayerStats& stats) {
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
     const ImVec2 panelPos(24.0f, 24.0f);
@@ -320,6 +356,12 @@ void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
         device = d3dDevice;
     }
 
+bool UIRenderer::HandleKeyEnter() {
+    if (!menuVisible) return false;
+
+    // If unload button is selected
+    if (selectedIndex == -1) {
+        return true; // Signal unload
     if (!imguiInitialized) {
         return;
     }
@@ -339,8 +381,113 @@ void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
         featureToggles.clear();
     }
 
+    return false;
     ImGui::Render();
     ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+}
+
+bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
+    requestUnload = false;
+
+    if (!menuVisible) {
+        // When menu is hidden, only consume raw input to avoid cursor issues
+        if (msg.message == WM_INPUT) {
+            return true;
+        }
+        return false;
+    }
+
+    bool handled = false;
+
+    switch (msg.message) {
+    case WM_INPUT:
+        handled = true;
+        break;
+
+    case WM_MOUSEMOVE: {
+        POINT cursor = { GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam) };
+        handled = true;
+
+        int hoverIndex = -2;
+        for (size_t i = 0; i < featureToggles.size(); ++i) {
+            if (PtInRect(&featureToggles[i].bounds, cursor)) {
+                hoverIndex = static_cast<int>(i);
+                break;
+            }
+        }
+
+        if (hoverIndex >= 0) {
+            selectedIndex = hoverIndex;
+        } else if (PtInRect(&unloadButtonRect, cursor)) {
+            selectedIndex = -1;
+        }
+        break;
+    }
+
+    case WM_LBUTTONDOWN: {
+        POINT cursor = { GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam) };
+        handled = true;
+
+        if (PtInRect(&unloadButtonRect, cursor)) {
+            selectedIndex = -1;
+            requestUnload = true;
+            break;
+        }
+
+        for (size_t i = 0; i < featureToggles.size(); ++i) {
+            if (PtInRect(&featureToggles[i].bounds, cursor)) {
+                selectedIndex = static_cast<int>(i);
+                if (featureToggles[i].onToggle) {
+                    featureToggles[i].onToggle();
+                }
+                break;
+            }
+        }
+        break;
+    }
+
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
+        bool initialPress = ((msg.lParam & (1 << 30)) == 0);
+        switch (msg.wParam) {
+        case VK_UP:
+            if (initialPress) {
+                HandleKeyUp();
+            }
+            handled = true;
+            break;
+        case VK_DOWN:
+            if (initialPress) {
+                HandleKeyDown();
+            }
+            handled = true;
+            break;
+        case VK_RETURN:
+        case VK_SPACE:
+            if (initialPress) {
+                if (HandleKeyEnter()) {
+                    requestUnload = true;
+                }
+            }
+            handled = true;
+            break;
+        case VK_ESCAPE:
+            if (initialPress) {
+                SetMenuVisible(false);
+            }
+            handled = true;
+            break;
+        default:
+            break;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    return handled;
 }
 
 void UIRenderer::Shutdown() {

@@ -34,6 +34,12 @@ private:
     uintptr_t healthAddress;
     uintptr_t armorAddress;
     uintptr_t ammoAddress;
+
+    // Frame timing
+    std::chrono::steady_clock::time_point lastRenderTime;
+
+    // Input routing state
+    std::atomic<bool> messagePumpInputEnabled;
     
     // Original bytes for patching/unpatching
     std::vector<BYTE> originalHealthBytes;
@@ -88,6 +94,10 @@ public:
     // Main loop
     void Run();
 
+    // Overlay input processing
+    void ProcessOverlayInput();
+    bool ProcessMessage(MSG& msg, bool inputCaptureEnabled);
+
     // Feature functions
     void ToggleGodMode();
     void ToggleInfiniteAmmo();
@@ -117,6 +127,13 @@ public:
     // Build feature toggles for UI
     std::vector<FeatureToggle> BuildFeatureToggles();
     PlayerStats GetPlayerStats();
+
+    // Accessors
+    UIRenderer* GetUIRenderer() const { return uiRenderer; }
+    HWND GetGameWindowHandle() const { return gameWindowHandle; }
+    void SetMessagePumpInputEnabled(bool enabled);
+    bool IsMessagePumpInputEnabled() const { return messagePumpInputEnabled.load(); }
+    void SetOverlayMenuVisible(bool visible);
 };
 
 #endif // TRAINER_H
