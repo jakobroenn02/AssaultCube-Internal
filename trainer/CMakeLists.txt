@@ -17,7 +17,17 @@ set(SOURCES
     src/dllmain.cpp
     src/trainer.cpp
     src/d3d_hook.cpp
+    src/ui.cpp
     src/pch.cpp
+)
+
+set(IMGUI_SOURCES
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/imgui_impl_dx9.cpp
+    third_party/imgui/imgui_impl_win32.cpp
 )
 
 # Header files
@@ -43,13 +53,18 @@ target_include_directories(minhook
 )
 
 # Create DLL
-add_library(ACTrainer SHARED ${SOURCES} ${HEADERS})
+add_library(ACTrainer SHARED ${SOURCES} ${IMGUI_SOURCES} ${HEADERS})
 
 # Link libraries
 target_link_libraries(ACTrainer
     minhook
     psapi
     d3d9
+    imm32
+)
+
+target_include_directories(ACTrainer
+    PRIVATE ${PROJECT_SOURCE_DIR}/third_party/imgui
 )
 
 # Precompiled header

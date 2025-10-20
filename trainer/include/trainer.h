@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <vector>
 #include <atomic>
-#include <chrono>
 
 // Forward declare UIRenderer to avoid circular dependency
 class UIRenderer;
@@ -35,9 +34,6 @@ private:
     uintptr_t healthAddress;
     uintptr_t armorAddress;
     uintptr_t ammoAddress;
-    
-    // Frame timing
-    std::chrono::steady_clock::time_point lastRenderTime;
     
     // Original bytes for patching/unpatching
     std::vector<BYTE> originalHealthBytes;
@@ -91,10 +87,7 @@ public:
     
     // Main loop
     void Run();
-    
-    // Overlay input processing
-    void ProcessOverlayInput();
-    
+
     // Feature functions
     void ToggleGodMode();
     void ToggleInfiniteAmmo();

@@ -19,24 +19,22 @@ Trainer::Trainer(uintptr_t base)
       playerBase(0),
       healthAddress(0),
       armorAddress(0),
-      ammoAddress(0) {
-    lastRenderTime = std::chrono::steady_clock::now();
-}
+      ammoAddress(0) {}
 
 Trainer::~Trainer() {
     // Restore recoil bytes if patched
     if (recoilPatched) {
         RestoreRecoilBytes();
     }
-    
+
+    RemoveHooks();
+
     // Clean up UI renderer
     if (uiRenderer) {
         uiRenderer->Shutdown();
         delete uiRenderer;
         uiRenderer = nullptr;
     }
-
-    RemoveHooks();
 }
 
 bool Trainer::Initialize() {
@@ -49,15 +47,6 @@ bool Trainer::Initialize() {
     }
 
     if (gameWindowHandle) {
-        if (!InstallHooks(gameWindowHandle)) {
-            std::cout << "WARNING: Failed to install Direct3D hooks" << std::endl;
-        } else {
-            std::cout << "Direct3D hooks installed" << std::endl;
-        }
-    }
-
-    // Initialize UI Renderer
-    if (gameWindowHandle) {
         uiRenderer = new UIRenderer();
         if (!uiRenderer->Initialize(gameWindowHandle)) {
             std::cout << "WARNING: Failed to initialize UI renderer" << std::endl;
@@ -65,6 +54,12 @@ bool Trainer::Initialize() {
             uiRenderer = nullptr;
         } else {
             std::cout << "UI Renderer initialized successfully!" << std::endl;
+        }
+
+        if (!InstallHooks(gameWindowHandle, this, uiRenderer)) {
+            std::cout << "WARNING: Failed to install Direct3D hooks" << std::endl;
+        } else {
+            std::cout << "Direct3D hooks installed" << std::endl;
         }
     } else {
         std::cout << "WARNING: Could not find game window" << std::endl;
@@ -117,25 +112,11 @@ void Trainer::Run() {
     std::cout << "Use UP/DOWN arrows to navigate, ENTER to toggle" << std::endl;
     
     while (isRunning) {
-        // Process overlay input (keyboard navigation)
-        ProcessOverlayInput();
-        
         // Update player data if features are active
         if (godMode || infiniteAmmo || regenHealth) {
             UpdatePlayerData();
         }
-        
-        // Render UI at controlled frame rate (60 FPS)
-        auto currentTime = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastRenderTime);
-        
-        if (uiRenderer && elapsed.count() >= 16) { // ~60 FPS
-            auto toggles = BuildFeatureToggles();
-            auto stats = GetPlayerStats();
-            uiRenderer->Render(toggles, stats);
-            lastRenderTime = currentTime;
-        }
-        
+
         // Sleep to reduce CPU usage
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -284,61 +265,6 @@ void Trainer::UpdatePlayerData() {
         if (currentArmor < 75) {
             SetArmor(75);
         }
-    }
-}
-
-// Process overlay input (mouse clicks)
-void Trainer::ProcessOverlayInput() {
-    if (!uiRenderer) return;
-    
-    // Check for INSERT key to toggle menu visibility
-    static bool insertPressed = false;
-    if (GetAsyncKeyState(VK_INSERT) & 0x8000) {
-        if (!insertPressed) {
-            uiRenderer->ToggleMenu();
-            insertPressed = true;
-        }
-    } else {
-        insertPressed = false;
-    }
-    
-    // Only process other keys if menu is visible
-    if (!uiRenderer->IsMenuVisible()) return;
-    
-    // UP arrow - navigate up
-    static bool upPressed = false;
-    if (GetAsyncKeyState(VK_UP) & 0x8000) {
-        if (!upPressed) {
-            uiRenderer->HandleKeyUp();
-            upPressed = true;
-        }
-    } else {
-        upPressed = false;
-    }
-    
-    // DOWN arrow - navigate down
-    static bool downPressed = false;
-    if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
-        if (!downPressed) {
-            uiRenderer->HandleKeyDown();
-            downPressed = true;
-        }
-    } else {
-        downPressed = false;
-    }
-    
-    // ENTER - activate selected item
-    static bool enterPressed = false;
-    if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
-        if (!enterPressed) {
-            bool unloadRequested = uiRenderer->HandleKeyEnter();
-            if (unloadRequested) {
-                RequestUnload();
-            }
-            enterPressed = true;
-        }
-    } else {
-        enterPressed = false;
     }
 }
 

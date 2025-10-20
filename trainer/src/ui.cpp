@@ -1,50 +1,42 @@
 #include "pch.h"
 #include "ui.h"
+
 #include <cstdio>
-#include <thread>
+#include <d3d9.h>
 
-// Window class name for overlay
-static const char* OVERLAY_CLASS_NAME = "ACTrainerOverlay";
+#include "trainer.h"
 
-// Window procedure for overlay window
-LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    switch (msg) {
-        case WM_PAINT: {
-            // Painting is handled manually in Render()
-            ValidateRect(hwnd, NULL);
-            return 0;
-        }
-        case WM_DESTROY:
-            return 0;
-        default:
-            return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
+#include "imgui.h"
+#include "imgui_impl_dx9.h"
+#include "imgui_impl_win32.h"
+
+namespace {
+constexpr ImU32 ColorU32(int r, int g, int b, int a = 255) {
+    return IM_COL32(r, g, b, a);
 }
+
+constexpr float kButtonHeight = 32.0f;
+constexpr float kButtonSpacing = 8.0f;
+constexpr float kIndicatorSize = 14.0f;
+constexpr float kCornerRadius = 8.0f;
+} // namespace
 
 UIRenderer::UIRenderer()
-    : gameWindow(NULL),
-      overlayWindow(NULL),
-      deviceContext(NULL),
-      memoryDC(NULL),
-      memoryBitmap(NULL),
-      oldBitmap(NULL),
-      backgroundBrush(NULL),
-      activeFeatureBrush(NULL),
-      inactiveFeatureBrush(NULL),
-      buttonBrush(NULL),
-      buttonHoverBrush(NULL),
-      headerFont(NULL),
-      normalFont(NULL),
-      smallFont(NULL),
-      windowWidth(800),
-      windowHeight(600),
-      panelX(20),
-      panelY(20),
-      panelWidth(350),
-      panelHeight(400),
+    : gameWindow(nullptr),
+      device(nullptr),
+      imguiInitialized(false),
+      menuVisible(false),
+      insertHeld(false),
+      upHeld(false),
+      downHeld(false),
+      enterHeld(false),
       selectedIndex(0),
-      menuVisible(false) {
-}
+      panelWidth(360),
+      panelPadding(18),
+      sectionSpacing(22),
+      headerFont(nullptr),
+      textFont(nullptr),
+      smallFont(nullptr) {}
 
 UIRenderer::~UIRenderer() {
     Shutdown();
@@ -54,453 +46,314 @@ bool UIRenderer::Initialize(HWND targetWindow) {
     if (!targetWindow) {
         return false;
     }
-    
+
     gameWindow = targetWindow;
-    
-    // Get window dimensions
-    RECT clientRect;
-    if (GetClientRect(gameWindow, &clientRect)) {
-        windowWidth = clientRect.right - clientRect.left;
-        windowHeight = clientRect.bottom - clientRect.top;
-    }
-    
-    // Register overlay window class
-    WNDCLASSEXA wc = { 0 };
-    wc.cbSize = sizeof(WNDCLASSEXA);
-    wc.lpfnWndProc = OverlayWndProc;
-    wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = OVERLAY_CLASS_NAME;
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    
-    if (!RegisterClassExA(&wc)) {
-        DWORD error = GetLastError();
-        if (error != ERROR_CLASS_ALREADY_EXISTS) {
-            return false;
-        }
-    }
-    
-    // Get game window position on screen
-    RECT gameRect;
-    GetWindowRect(gameWindow, &gameRect);
-    
-    // Create transparent overlay window that follows the game window
-    overlayWindow = CreateWindowExA(
-        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
-        OVERLAY_CLASS_NAME,
-        "AC Trainer Overlay",
-        WS_POPUP,
-        gameRect.left, gameRect.top,
-        windowWidth, windowHeight,
-        NULL, NULL,
-        GetModuleHandle(NULL),
-        NULL
-    );
-    
-    if (!overlayWindow) {
-        return false;
-    }
-    
-    // Make overlay click-through and 90% transparent background
-    SetLayeredWindowAttributes(overlayWindow, RGB(0, 0, 0), 0, LWA_COLORKEY);
-    
-    // Show the overlay window
-    ShowWindow(overlayWindow, SW_SHOW);
-    
-    // Get DC for overlay window
-    deviceContext = GetDC(overlayWindow);
-    if (!deviceContext) {
-        return false;
-    }
-    
-    // Create memory DC for double buffering
-    memoryDC = CreateCompatibleDC(deviceContext);
-    memoryBitmap = CreateCompatibleBitmap(deviceContext, windowWidth, windowHeight);
-    oldBitmap = (HBITMAP)SelectObject(memoryDC, memoryBitmap);
-    
-    // Create brushes
-    backgroundBrush = CreateSolidBrush(UIColors::BACKGROUND);
-    activeFeatureBrush = CreateSolidBrush(UIColors::ACTIVE);
-    inactiveFeatureBrush = CreateSolidBrush(UIColors::INACTIVE);
-    buttonBrush = CreateSolidBrush(UIColors::BUTTON_BG);
-    buttonHoverBrush = CreateSolidBrush(UIColors::BUTTON_HOVER);
-    
-    // Create fonts
-    headerFont = CreateFontA(20, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, 
-                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, 
-                             CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, 
-                             DEFAULT_PITCH | FF_DONTCARE, "Arial");
-    
-    normalFont = CreateFontA(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                             CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
-                             DEFAULT_PITCH | FF_DONTCARE, "Arial");
-    
-    smallFont = CreateFontA(11, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                            CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
-                            DEFAULT_PITCH | FF_DONTCARE, "Arial");
-    
+    menuVisible = false;
+    selectedIndex = 0;
+    featureToggles.clear();
     return true;
 }
 
-void UIRenderer::RenderPanel() {
-    if (!memoryDC) return;
-    
-    // Clear the entire memory DC with black (transparent for overlay)
-    RECT fullRect = { 0, 0, windowWidth, windowHeight };
-    FillRect(memoryDC, &fullRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
-    
-    // Draw semi-transparent background panel
-    RECT panelRect = { panelX, panelY, panelX + panelWidth, panelY + panelHeight };
-    FillRect(memoryDC, &panelRect, backgroundBrush);
-    
-    // Draw border
-    HPEN borderPen = CreatePen(PS_SOLID, 2, UIColors::BORDER);
-    HPEN oldPen = (HPEN)SelectObject(memoryDC, borderPen);
-    
-    Rectangle(memoryDC, panelX, panelY, panelX + panelWidth, panelY + panelHeight);
-    
-    SelectObject(memoryDC, oldPen);
-    DeleteObject(borderPen);
-}
-
-void UIRenderer::RenderText(int x, int y, const std::string& text, COLORREF color, HFONT font) {
-    if (!memoryDC) return;
-    
-    SetTextColor(memoryDC, color);
-    SetBkMode(memoryDC, TRANSPARENT);
-    
-    HFONT oldFont = (HFONT)SelectObject(memoryDC, font);
-    TextOutA(memoryDC, x, y, text.c_str(), (int)text.length());
-    SelectObject(memoryDC, oldFont);
-}
-
-void UIRenderer::Render(const std::vector<FeatureToggle>& toggles, const PlayerStats& stats) {
-    if (!overlayWindow || !menuVisible) {
-        // Hide overlay when menu is not visible
-        if (overlayWindow) {
-            ShowWindow(overlayWindow, SW_HIDE);
-        }
+void UIRenderer::InitializeImGui(IDirect3DDevice9* d3dDevice) {
+    if (imguiInitialized || !d3dDevice || !gameWindow) {
         return;
     }
-    
-    // Update overlay position to follow game window
-    RECT gameRect;
-    GetWindowRect(gameWindow, &gameRect);
-    
-    // Check if game is fullscreen by comparing window size to screen size
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    int gameWidth = gameRect.right - gameRect.left;
-    int gameHeight = gameRect.bottom - gameRect.top;
-    bool isFullscreen = (gameWidth >= screenWidth && gameHeight >= screenHeight);
-    
-    // In fullscreen, use client area instead of window rect
-    if (isFullscreen) {
-        RECT clientRect;
-        GetClientRect(gameWindow, &clientRect);
-        POINT topLeft = { 0, 0 };
-        ClientToScreen(gameWindow, &topLeft);
-        
-        gameRect.left = topLeft.x;
-        gameRect.top = topLeft.y;
-        gameRect.right = topLeft.x + (clientRect.right - clientRect.left);
-        gameRect.bottom = topLeft.y + (clientRect.bottom - clientRect.top);
-        
-        gameWidth = gameRect.right - gameRect.left;
-        gameHeight = gameRect.bottom - gameRect.top;
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
+
+    ImGui::StyleColorsDark();
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 6.0f;
+    style.WindowBorderSize = 0.0f;
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.1f, 0.11f, 0.13f, 1.0f);
+
+    ImFontConfig textConfig;
+    textConfig.SizePixels = 16.0f;
+    textFont = io.Fonts->AddFontDefault(&textConfig);
+
+    ImFontConfig headerConfig;
+    headerConfig.SizePixels = 22.0f;
+    headerFont = io.Fonts->AddFontDefault(&headerConfig);
+
+    ImFontConfig smallConfig;
+    smallConfig.SizePixels = 13.0f;
+    smallFont = io.Fonts->AddFontDefault(&smallConfig);
+
+    if (!textFont) {
+        textFont = io.Fonts->AddFontDefault();
     }
-    
-    // Recreate bitmap if size changed
-    if (gameWidth != windowWidth || gameHeight != windowHeight) {
-        windowWidth = gameWidth;
-        windowHeight = gameHeight;
-        
-        if (memoryBitmap) {
-            SelectObject(memoryDC, oldBitmap);
-            DeleteObject(memoryBitmap);
-            memoryBitmap = CreateCompatibleBitmap(deviceContext, windowWidth, windowHeight);
-            oldBitmap = (HBITMAP)SelectObject(memoryDC, memoryBitmap);
-        }
+    if (!headerFont) {
+        headerFont = textFont;
     }
-    
-    // Move overlay to match game window position
-    // Use different flags for fullscreen to ensure it's above the game
-    UINT flags = SWP_NOACTIVATE | SWP_SHOWWINDOW;
-    if (isFullscreen) {
-        // In fullscreen, force topmost and update z-order
-        SetWindowPos(overlayWindow, HWND_TOPMOST, 
-                     gameRect.left, gameRect.top, 
-                     windowWidth, windowHeight,
-                     flags);
-        // Ensure window is visible and repaint
-        ShowWindow(overlayWindow, SW_SHOWNOACTIVATE);
-        UpdateWindow(overlayWindow);
-    } else {
-        SetWindowPos(overlayWindow, HWND_TOPMOST, 
-                     gameRect.left, gameRect.top, 
-                     windowWidth, windowHeight,
-                     flags);
+    if (!smallFont) {
+        smallFont = textFont;
     }
-    
-    // Store toggles for navigation
-    featureToggles = toggles;
-    
-    // Clear memory DC with black (will be transparent via color key)
-    RECT fullRect = { 0, 0, windowWidth, windowHeight };
-    FillRect(memoryDC, &fullRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
-    
-    // Draw to memory DC
-    RenderPanel();
-    
-    // Render title
-    int yOffset = 10;
-    RenderText(panelX + 15, panelY + yOffset, "AC Trainer", UIColors::HEADER, headerFont);
-    yOffset += 35;
-    
-    // Render hint - muted gray
-    RenderText(panelX + 15, panelY + yOffset, "UP/DOWN: Navigate | ENTER: Toggle | INSERT: Hide", RGB(110, 115, 120), smallFont);
-    yOffset += 25;
-    
-    // Render sections
-    RenderFeatureToggles(yOffset);
-    RenderPlayerStats(yOffset, stats);
-    RenderUnloadButton(yOffset);
-    
-    // Blit to overlay window (single operation = no flicker)
-    BitBlt(deviceContext, 0, 0, windowWidth, windowHeight, memoryDC, 0, 0, SRCCOPY);
-    
-    // Force a redraw in fullscreen mode
-    if (isFullscreen) {
-        RedrawWindow(overlayWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+
+    ImGui_ImplWin32_Init(gameWindow);
+    ImGui_ImplDX9_Init(d3dDevice);
+
+    device = d3dDevice;
+    imguiInitialized = true;
+}
+
+void UIRenderer::UpdateMenuState() {
+    SHORT state = GetAsyncKeyState(VK_INSERT);
+    bool pressed = (state & 0x8000) != 0;
+    if (pressed && !insertHeld) {
+        menuVisible = !menuVisible;
+    }
+    insertHeld = pressed;
+
+    if (!menuVisible) {
+        selectedIndex = 0;
+        upHeld = downHeld = enterHeld = false;
     }
 }
 
-void UIRenderer::RenderFeatureToggles(int& yOffset) {
-    if (!deviceContext) return;
-    
-    int x = panelX + 15;
-    int y = panelY + yOffset;
-    
-    // Header
-    RenderText(x, y, "=== FEATURES ===", UIColors::HEADER, normalFont);
-    y += 25;
-    
-    // Render each toggle button
-    for (size_t i = 0; i < featureToggles.size(); i++) {
-        RenderToggleButton(x, y, i, featureToggles[i]);
-        y += 35;
+void UIRenderer::UpdateNavigation(Trainer& trainer) {
+    if (!menuVisible) {
+        return;
     }
-    
-    yOffset = y - panelY + 10;
-}
 
-void UIRenderer::RenderToggleButton(int x, int y, int index, const FeatureToggle& toggle) {
-    if (!memoryDC) return;
-    
-    int buttonWidth = 300;
-    int buttonHeight = 30;
-    
-    // Update bounds for hit testing
-    featureToggles[index].bounds = { x, y, x + buttonWidth, y + buttonHeight };
-    
-    // Choose brush based on selection state (keyboard navigation)
-    bool isSelected = (index == selectedIndex);
-    HBRUSH brush = isSelected ? buttonHoverBrush : buttonBrush;
-    
-    // Draw button background
-    RECT buttonRect = { x, y, x + buttonWidth, y + buttonHeight };
-    FillRect(memoryDC, &buttonRect, brush);
-    
-    // Draw button border (highlight if selected)
-    COLORREF borderColor = isSelected ? UIColors::ACTIVE : UIColors::BORDER;
-    HPEN borderPen = CreatePen(PS_SOLID, isSelected ? 2 : 1, borderColor);
-    HPEN oldPen = (HPEN)SelectObject(memoryDC, borderPen);
-    Rectangle(memoryDC, x, y, x + buttonWidth, y + buttonHeight);
-    SelectObject(memoryDC, oldPen);
-    DeleteObject(borderPen);
-    
-    // Get active state
-    bool isActive = toggle.isActive ? toggle.isActive() : false;
-    
-    // Draw status indicator
-    HBRUSH statusBrush = isActive ? activeFeatureBrush : inactiveFeatureBrush;
-    RECT statusRect = { x + 5, y + 8, x + 20, y + 22 };
-    FillRect(memoryDC, &statusRect, statusBrush);
-    
-    // Draw feature name
-    std::string displayName = "[" + std::string(isActive ? "ON" : "OFF") + "] " + toggle.name;
-    RenderText(x + 25, y + 7, displayName, UIColors::TEXT, normalFont);
-}
+    int maxIndex = static_cast<int>(featureToggles.size()) - 1;
+    if (maxIndex < -1) {
+        maxIndex = -1;
+    }
 
-void UIRenderer::RenderPlayerStats(int& yOffset, const PlayerStats& stats) {
-    if (!deviceContext) return;
-    
-    int x = panelX + 15;
-    int y = panelY + yOffset;
-    
-    // Header
-    RenderText(x, y, "=== STATS ===", UIColors::HEADER, normalFont);
-    y += 25;
-    
-    // Health
-    char healthStr[64];
-    sprintf_s(healthStr, sizeof(healthStr), "Health: %d/100", stats.health);
-    COLORREF healthColor = (stats.health > 70) ? UIColors::ACTIVE : 
-                          (stats.health > 30) ? RGB(200, 160, 60) : RGB(200, 100, 100);
-    RenderText(x, y, healthStr, healthColor, normalFont);
-    y += 20;
-    
-    // Armor
-    char armorStr[64];
-    sprintf_s(armorStr, sizeof(armorStr), "Armor:  %d/100", stats.armor);
-    COLORREF armorColor = (stats.armor > 50) ? UIColors::ACTIVE : UIColors::TEXT;
-    RenderText(x, y, armorStr, armorColor, normalFont);
-    y += 20;
-    
-    // Ammo
-    char ammoStr[64];
-    sprintf_s(ammoStr, sizeof(ammoStr), "Ammo:   %d", stats.ammo);
-    RenderText(x, y, ammoStr, UIColors::TEXT, normalFont);
-    y += 20;
-    
-    yOffset = y - panelY + 10;
-}
-
-void UIRenderer::RenderUnloadButton(int& yOffset) {
-    if (!memoryDC) return;
-    
-    int x = panelX + 15;
-    int y = panelY + yOffset;
-    int buttonWidth = 300;
-    int buttonHeight = 30;
-    
-    // Update unload button bounds
-    unloadButtonRect = { x, y, x + buttonWidth, y + buttonHeight };
-    
-    // Check if unload button is selected
-    bool isSelected = (selectedIndex == -1);
-    
-    // Draw button - muted red tones
-    COLORREF bgColor = isSelected ? RGB(160, 60, 60) : RGB(120, 40, 40);
-    HBRUSH brush = CreateSolidBrush(bgColor);
-    RECT buttonRect = { x, y, x + buttonWidth, y + buttonHeight };
-    FillRect(memoryDC, &buttonRect, brush);
-    DeleteObject(brush);
-    
-    // Draw border (highlight if selected) - softer colors
-    COLORREF borderColor = isSelected ? RGB(200, 180, 100) : RGB(180, 80, 80);
-    HPEN borderPen = CreatePen(PS_SOLID, isSelected ? 2 : 1, borderColor);
-    HPEN oldPen = (HPEN)SelectObject(memoryDC, borderPen);
-    Rectangle(memoryDC, x, y, x + buttonWidth, y + buttonHeight);
-    SelectObject(memoryDC, oldPen);
-    DeleteObject(borderPen);
-    
-    // Draw text - softer white
-    RenderText(x + 110, y + 7, "UNLOAD TRAINER", RGB(220, 220, 220), normalFont);
-    
-    yOffset = y - panelY + buttonHeight + 10;
-}
-
-void UIRenderer::ToggleMenu() {
-    menuVisible = !menuVisible;
-}
-
-void UIRenderer::HandleKeyDown() {
-    if (!menuVisible) return;
-    
-    int maxIndex = (int)featureToggles.size() - 1;
-    selectedIndex++;
-    
-    // Wrap around: after last toggle goes to unload button (-1)
     if (selectedIndex > maxIndex) {
-        selectedIndex = -1;
-    }
-}
-
-void UIRenderer::HandleKeyUp() {
-    if (!menuVisible) return;
-    
-    int maxIndex = (int)featureToggles.size() - 1;
-    selectedIndex--;
-    
-    // Wrap around: before first toggle goes to unload button (-1)
-    if (selectedIndex < -1) {
         selectedIndex = maxIndex;
     }
-}
-
-bool UIRenderer::HandleKeyEnter() {
-    if (!menuVisible) return false;
-    
-    // If unload button is selected
-    if (selectedIndex == -1) {
-        return true; // Signal unload
+    if (selectedIndex < -1) {
+        selectedIndex = -1;
     }
-    
-    // Toggle the selected feature
-    if (selectedIndex >= 0 && selectedIndex < (int)featureToggles.size()) {
-        if (featureToggles[selectedIndex].onToggle) {
-            featureToggles[selectedIndex].onToggle();
+
+    bool downPressed = (GetAsyncKeyState(VK_DOWN) & 0x8000) != 0;
+    if (downPressed && !downHeld) {
+        selectedIndex++;
+        if (selectedIndex > maxIndex) {
+            selectedIndex = -1;
         }
     }
-    
-    return false;
+    downHeld = downPressed;
+
+    bool upPressed = (GetAsyncKeyState(VK_UP) & 0x8000) != 0;
+    if (upPressed && !upHeld) {
+        selectedIndex--;
+        if (selectedIndex < -1) {
+            selectedIndex = maxIndex;
+        }
+    }
+    upHeld = upPressed;
+
+    bool enterPressed = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+    if (enterPressed && !enterHeld) {
+        if (selectedIndex == -1) {
+            trainer.RequestUnload();
+        } else if (selectedIndex >= 0 && selectedIndex < static_cast<int>(featureToggles.size())) {
+            if (featureToggles[selectedIndex].onToggle) {
+                featureToggles[selectedIndex].onToggle();
+            }
+        }
+    }
+    enterHeld = enterPressed;
+}
+
+float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) {
+    float y = start.y;
+    const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
+
+    for (size_t i = 0; i < featureToggles.size(); ++i) {
+        const bool isSelected = selectedIndex == static_cast<int>(i);
+        const bool isActive = featureToggles[i].isActive ? featureToggles[i].isActive() : false;
+
+        ImVec2 min(start.x, y);
+        ImVec2 max(start.x + buttonWidth, y + kButtonHeight);
+
+        ImU32 bgColor = isSelected ? ColorU32(45, 50, 58) : ColorU32(35, 38, 42);
+        ImU32 borderColor = isSelected ? ColorU32(80, 200, 120) : ColorU32(60, 70, 85);
+        ImU32 indicatorColor = isActive ? ColorU32(80, 200, 120) : ColorU32(100, 105, 110);
+
+        drawList->AddRectFilled(min, max, bgColor, kCornerRadius);
+        drawList->AddRect(min, max, borderColor, kCornerRadius, 0, isSelected ? 2.0f : 1.0f);
+
+        ImVec2 indicatorMin(min.x + 10.0f, min.y + (kButtonHeight - kIndicatorSize) * 0.5f);
+        ImVec2 indicatorMax(indicatorMin.x + kIndicatorSize, indicatorMin.y + kIndicatorSize);
+        drawList->AddRectFilled(indicatorMin, indicatorMax, indicatorColor, 4.0f);
+
+        std::string label = "[";
+        label += isActive ? "ON" : "OFF";
+        label += "] ";
+        label += featureToggles[i].name;
+
+        ImVec2 textPos(indicatorMax.x + 10.0f, min.y + 7.0f);
+        drawList->AddText(textFont ? textFont : ImGui::GetFont(),
+                          textFont ? textFont->FontSize : ImGui::GetFontSize(),
+                          textPos,
+                          ColorU32(180, 185, 190),
+                          label.c_str());
+
+        y += kButtonHeight + kButtonSpacing;
+    }
+
+    return y + 6.0f;
+}
+
+float UIRenderer::DrawPlayerStats(ImDrawList* drawList, const ImVec2& start, const PlayerStats& stats) {
+    float y = start.y;
+
+    drawList->AddText(textFont ? textFont : ImGui::GetFont(),
+                      textFont ? textFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x, y),
+                      ColorU32(120, 160, 200),
+                      "=== STATS ===");
+    y += 26.0f;
+
+    auto addStat = [&](const char* label, int value, ImU32 color) {
+        char buffer[64];
+        sprintf_s(buffer, "%s %d", label, value);
+        drawList->AddText(textFont ? textFont : ImGui::GetFont(),
+                          textFont ? textFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x, y),
+                          color,
+                          buffer);
+        y += 22.0f;
+    };
+
+    ImU32 healthColor = stats.health > 70 ? ColorU32(80, 200, 120)
+                                          : (stats.health > 30 ? ColorU32(200, 160, 60) : ColorU32(200, 100, 100));
+    addStat("Health:", stats.health, healthColor);
+    ImU32 armorColor = stats.armor > 50 ? ColorU32(80, 200, 120) : ColorU32(180, 185, 190);
+    addStat("Armor:", stats.armor, armorColor);
+    addStat("Ammo:", stats.ammo, ColorU32(180, 185, 190));
+
+    return y + sectionSpacing;
+}
+
+float UIRenderer::DrawUnloadButton(ImDrawList* drawList, const ImVec2& start) {
+    float y = start.y;
+    const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
+    ImVec2 min(start.x, y);
+    ImVec2 max(start.x + buttonWidth, y + kButtonHeight);
+
+    const bool isSelected = selectedIndex == -1;
+    ImU32 bgColor = isSelected ? ColorU32(160, 60, 60) : ColorU32(120, 40, 40);
+    ImU32 borderColor = isSelected ? ColorU32(200, 180, 100) : ColorU32(180, 80, 80);
+
+    drawList->AddRectFilled(min, max, bgColor, kCornerRadius);
+    drawList->AddRect(min, max, borderColor, kCornerRadius, 0, isSelected ? 2.0f : 1.0f);
+
+    const char* text = "UNLOAD TRAINER";
+    ImVec2 textSize = ImGui::CalcTextSize(text);
+    ImVec2 textPos(min.x + (buttonWidth - textSize.x) * 0.5f, min.y + (kButtonHeight - textSize.y) * 0.5f);
+
+    drawList->AddText(textFont ? textFont : ImGui::GetFont(),
+                      textFont ? textFont->FontSize : ImGui::GetFontSize(),
+                      textPos,
+                      ColorU32(220, 220, 220),
+                      text);
+
+    return y + kButtonHeight + 6.0f;
+}
+
+void UIRenderer::DrawMenu(const PlayerStats& stats) {
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    const ImVec2 panelPos(24.0f, 24.0f);
+
+    const float headerHeight = 36.0f;
+    const float hintHeight = 28.0f;
+    const float togglesHeight = static_cast<float>(featureToggles.size()) * (kButtonHeight + kButtonSpacing) + 6.0f;
+    const float statsHeight = 26.0f + (22.0f * 3.0f) + static_cast<float>(sectionSpacing);
+    const float unloadHeight = kButtonHeight + 6.0f;
+
+    const float panelHeight = static_cast<float>(panelPadding) * 2.0f +
+                              headerHeight + hintHeight + togglesHeight + statsHeight + unloadHeight;
+
+    ImVec2 panelMin = panelPos;
+    ImVec2 panelMax(panelPos.x + static_cast<float>(panelWidth), panelPos.y + panelHeight);
+
+    drawList->AddRectFilled(panelMin, panelMax, ColorU32(25, 28, 32, 235), 12.0f);
+    drawList->AddRect(panelMin, panelMax, ColorU32(60, 70, 85, 255), 12.0f, 0, 2.0f);
+
+    float y = panelPos.y + static_cast<float>(panelPadding);
+
+    // Draw header
+    drawList->AddText(headerFont ? headerFont : ImGui::GetFont(),
+                      headerFont ? headerFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(panelPos.x + panelPadding, y),
+                      ColorU32(120, 160, 200),
+                      "AC Trainer");
+    y += headerHeight;
+
+    const char* hint = "UP/DOWN: Navigate | ENTER: Toggle | INSERT: Hide";
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(panelPos.x + panelPadding, y),
+                      ColorU32(150, 150, 155),
+                      hint);
+    y += hintHeight;
+
+    ImVec2 sectionStart(panelPos.x + panelPadding, y);
+    y = DrawFeatureToggles(drawList, sectionStart);
+
+    sectionStart = ImVec2(panelPos.x + panelPadding, y);
+    y = DrawPlayerStats(drawList, sectionStart, stats);
+
+    sectionStart = ImVec2(panelPos.x + panelPadding, y);
+    y = DrawUnloadButton(drawList, sectionStart);
+}
+
+void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
+    if (!d3dDevice || !gameWindow) {
+        return;
+    }
+
+    if (!imguiInitialized) {
+        InitializeImGui(d3dDevice);
+    } else if (device != d3dDevice) {
+        ImGui_ImplDX9_Shutdown();
+        ImGui_ImplDX9_Init(d3dDevice);
+        device = d3dDevice;
+    }
+
+    if (!imguiInitialized) {
+        return;
+    }
+
+    ImGui_ImplDX9_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    UpdateMenuState();
+
+    if (menuVisible) {
+        featureToggles = trainer.BuildFeatureToggles();
+        PlayerStats stats = trainer.GetPlayerStats();
+        UpdateNavigation(trainer);
+        DrawMenu(stats);
+    } else {
+        featureToggles.clear();
+    }
+
+    ImGui::Render();
+    ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 }
 
 void UIRenderer::Shutdown() {
-    // Clean up memory DC
-    if (memoryDC) {
-        if (memoryBitmap) {
-            SelectObject(memoryDC, oldBitmap);
-            DeleteObject(memoryBitmap);
-            memoryBitmap = NULL;
-        }
-        DeleteDC(memoryDC);
-        memoryDC = NULL;
+    if (imguiInitialized) {
+        ImGui_ImplDX9_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
     }
-    
-    if (deviceContext) {
-        ReleaseDC(overlayWindow, deviceContext);
-        deviceContext = NULL;
-    }
-    
-    // Destroy overlay window
-    if (overlayWindow) {
-        DestroyWindow(overlayWindow);
-        overlayWindow = NULL;
-    }
-    
-    if (backgroundBrush) {
-        DeleteObject(backgroundBrush);
-        backgroundBrush = NULL;
-    }
-    if (activeFeatureBrush) {
-        DeleteObject(activeFeatureBrush);
-        activeFeatureBrush = NULL;
-    }
-    if (inactiveFeatureBrush) {
-        DeleteObject(inactiveFeatureBrush);
-        inactiveFeatureBrush = NULL;
-    }
-    if (buttonBrush) {
-        DeleteObject(buttonBrush);
-        buttonBrush = NULL;
-    }
-    if (buttonHoverBrush) {
-        DeleteObject(buttonHoverBrush);
-        buttonHoverBrush = NULL;
-    }
-    if (headerFont) {
-        DeleteObject(headerFont);
-        headerFont = NULL;
-    }
-    if (normalFont) {
-        DeleteObject(normalFont);
-        normalFont = NULL;
-    }
-    if (smallFont) {
-        DeleteObject(smallFont);
-        smallFont = NULL;
-    }
+
+    imguiInitialized = false;
+    device = nullptr;
+    headerFont = nullptr;
+    textFont = nullptr;
+    smallFont = nullptr;
+    featureToggles.clear();
 }
