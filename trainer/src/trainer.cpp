@@ -100,6 +100,21 @@ bool Trainer::Initialize() {
     return true;
 }
 
+void Trainer::ProcessOverlayInput() {
+    if (!uiRenderer) {
+        return;
+    }
+
+    // Check INSERT key to toggle menu
+    static bool insertHeld = false;
+    bool insertPressed = (GetAsyncKeyState(VK_INSERT) & 0x8000) != 0;
+    
+    if (insertPressed && !insertHeld) {
+        uiRenderer->ToggleMenu();
+    }
+    insertHeld = insertPressed;
+}
+
 void Trainer::Run() {
     std::cout << "\nTrainer is running with overlay support...\n" << std::endl;
     std::cout << "Press INSERT to show/hide menu" << std::endl;

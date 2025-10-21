@@ -9,6 +9,7 @@
 #include "imgui_impl_win32.h"
 #include <cstdio>
 #include <thread>
+#include <algorithm>
 #include <windowsx.h>
 
 // Window class name for overlay
@@ -27,7 +28,7 @@ LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         default:
             return DefWindowProc(hwnd, msg, wParam, lParam);
     }
-
+}
 
 namespace {
 constexpr ImU32 ColorU32(int r, int g, int b, int a = 255) {
@@ -182,6 +183,26 @@ void UIRenderer::UpdateNavigation(Trainer& trainer) {
     enterHeld = enterPressed;
 }
 
+void UIRenderer::HandleKeyDown() {
+    if (!menuVisible) return;
+    
+    int maxIndex = static_cast<int>(featureToggles.size()) - 1;
+    selectedIndex++;
+    if (selectedIndex > maxIndex) {
+        selectedIndex = -1;  // Wrap to unload button
+    }
+}
+
+void UIRenderer::HandleKeyUp() {
+    if (!menuVisible) return;
+    
+    int maxIndex = static_cast<int>(featureToggles.size()) - 1;
+    selectedIndex--;
+    if (selectedIndex < -1) {
+        selectedIndex = maxIndex;  // Wrap to last feature
+    }
+}
+
 float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) {
     float y = start.y;
     const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
@@ -190,17 +211,17 @@ float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) 
         const bool isSelected = selectedIndex == static_cast<int>(i);
         const bool isActive = featureToggles[i].isActive ? featureToggles[i].isActive() : false;
 
-        ImVec2 min(start.x, y);
-        ImVec2 max(start.x + buttonWidth, y + kButtonHeight);
+        ImVec2 minVec(start.x, y);
+        ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
 
         ImU32 bgColor = isSelected ? ColorU32(45, 50, 58) : ColorU32(35, 38, 42);
         ImU32 borderColor = isSelected ? ColorU32(80, 200, 120) : ColorU32(60, 70, 85);
         ImU32 indicatorColor = isActive ? ColorU32(80, 200, 120) : ColorU32(100, 105, 110);
 
-        drawList->AddRectFilled(min, max, bgColor, kCornerRadius);
-        drawList->AddRect(min, max, borderColor, kCornerRadius, 0, isSelected ? 2.0f : 1.0f);
+        drawList->AddRectFilled(minVec, maxVec, bgColor, kCornerRadius);
+        drawList->AddRect(minVec, maxVec, borderColor, kCornerRadius, 0, isSelected ? 2.0f : 1.0f);
 
-        ImVec2 indicatorMin(min.x + 10.0f, min.y + (kButtonHeight - kIndicatorSize) * 0.5f);
+        ImVec2 indicatorMin(minVec.x + 10.0f, minVec.y + (kButtonHeight - kIndicatorSize) * 0.5f);
         ImVec2 indicatorMax(indicatorMin.x + kIndicatorSize, indicatorMin.y + kIndicatorSize);
         drawList->AddRectFilled(indicatorMin, indicatorMax, indicatorColor, 4.0f);
 
@@ -209,7 +230,7 @@ float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) 
         label += "] ";
         label += featureToggles[i].name;
 
-        ImVec2 textPos(indicatorMax.x + 10.0f, min.y + 7.0f);
+        ImVec2 textPos(indicatorMax.x + 10.0f, minVec.y + 7.0f);
         drawList->AddText(textFont ? textFont : ImGui::GetFont(),
                           textFont ? textFont->FontSize : ImGui::GetFontSize(),
                           textPos,
@@ -256,19 +277,19 @@ float UIRenderer::DrawPlayerStats(ImDrawList* drawList, const ImVec2& start, con
 float UIRenderer::DrawUnloadButton(ImDrawList* drawList, const ImVec2& start) {
     float y = start.y;
     const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
-    ImVec2 min(start.x, y);
-    ImVec2 max(start.x + buttonWidth, y + kButtonHeight);
+    ImVec2 minVec(start.x, y);
+    ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
 
     const bool isSelected = selectedIndex == -1;
     ImU32 bgColor = isSelected ? ColorU32(160, 60, 60) : ColorU32(120, 40, 40);
     ImU32 borderColor = isSelected ? ColorU32(200, 180, 100) : ColorU32(180, 80, 80);
 
-    drawList->AddRectFilled(min, max, bgColor, kCornerRadius);
-    drawList->AddRect(min, max, borderColor, kCornerRadius, 0, isSelected ? 2.0f : 1.0f);
+    drawList->AddRectFilled(minVec, maxVec, bgColor, kCornerRadius);
+    drawList->AddRect(minVec, maxVec, borderColor, kCornerRadius, 0, isSelected ? 2.0f : 1.0f);
 
     const char* text = "UNLOAD TRAINER";
     ImVec2 textSize = ImGui::CalcTextSize(text);
-    ImVec2 textPos(min.x + (buttonWidth - textSize.x) * 0.5f, min.y + (kButtonHeight - textSize.y) * 0.5f);
+    ImVec2 textPos(minVec.x + (buttonWidth - textSize.x) * 0.5f, minVec.y + (kButtonHeight - textSize.y) * 0.5f);
 
     drawList->AddText(textFont ? textFont : ImGui::GetFont(),
                       textFont ? textFont->FontSize : ImGui::GetFontSize(),
@@ -292,10 +313,9 @@ void UIRenderer::SetMenuVisible(bool visible) {
 
     if (!menuVisible) {
         selectedIndex = 0;
-        if (overlayWindow) {
-            ShowWindow(overlayWindow, SW_HIDE);
-        }
     }
+}
+
 void UIRenderer::DrawMenu(const PlayerStats& stats) {
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
     const ImVec2 panelPos(24.0f, 24.0f);
@@ -343,6 +363,24 @@ void UIRenderer::DrawMenu(const PlayerStats& stats) {
     y = DrawUnloadButton(drawList, sectionStart);
 }
 
+bool UIRenderer::HandleKeyEnter() {
+    if (!menuVisible) return false;
+
+    // If unload button is selected
+    if (selectedIndex == -1) {
+        return true; // Signal unload
+    }
+
+    // Toggle selected feature
+    if (selectedIndex >= 0 && selectedIndex < static_cast<int>(featureToggles.size())) {
+        if (featureToggles[selectedIndex].onToggle) {
+            featureToggles[selectedIndex].onToggle();
+        }
+    }
+
+    return false;
+}
+
 void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
     if (!d3dDevice || !gameWindow) {
         return;
@@ -356,12 +394,6 @@ void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
         device = d3dDevice;
     }
 
-bool UIRenderer::HandleKeyEnter() {
-    if (!menuVisible) return false;
-
-    // If unload button is selected
-    if (selectedIndex == -1) {
-        return true; // Signal unload
     if (!imguiInitialized) {
         return;
     }
@@ -381,7 +413,6 @@ bool UIRenderer::HandleKeyEnter() {
         featureToggles.clear();
     }
 
-    return false;
     ImGui::Render();
     ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 }
@@ -402,7 +433,8 @@ void UIRenderer::OnDeviceReset(IDirect3DDevice9* d3dDevice) {
 
     device = d3dDevice;
     ImGui_ImplDX9_CreateDeviceObjects();
-  
+}
+
 bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
     requestUnload = false;
 
@@ -420,48 +452,6 @@ bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
     case WM_INPUT:
         handled = true;
         break;
-
-    case WM_MOUSEMOVE: {
-        POINT cursor = { GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam) };
-        handled = true;
-
-        int hoverIndex = -2;
-        for (size_t i = 0; i < featureToggles.size(); ++i) {
-            if (PtInRect(&featureToggles[i].bounds, cursor)) {
-                hoverIndex = static_cast<int>(i);
-                break;
-            }
-        }
-
-        if (hoverIndex >= 0) {
-            selectedIndex = hoverIndex;
-        } else if (PtInRect(&unloadButtonRect, cursor)) {
-            selectedIndex = -1;
-        }
-        break;
-    }
-
-    case WM_LBUTTONDOWN: {
-        POINT cursor = { GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam) };
-        handled = true;
-
-        if (PtInRect(&unloadButtonRect, cursor)) {
-            selectedIndex = -1;
-            requestUnload = true;
-            break;
-        }
-
-        for (size_t i = 0; i < featureToggles.size(); ++i) {
-            if (PtInRect(&featureToggles[i].bounds, cursor)) {
-                selectedIndex = static_cast<int>(i);
-                if (featureToggles[i].onToggle) {
-                    featureToggles[i].onToggle();
-                }
-                break;
-            }
-        }
-        break;
-    }
 
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
