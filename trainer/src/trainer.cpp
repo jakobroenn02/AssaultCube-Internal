@@ -41,6 +41,8 @@ bool Trainer::Initialize() {
     }
 
     if (gameWindowHandle) {
+        std::cout << "Game window found: " << gameWindowHandle << std::endl;
+        
         uiRenderer = new UIRenderer();
         if (!uiRenderer->Initialize(gameWindowHandle)) {
             std::cout << "WARNING: Failed to initialize UI renderer" << std::endl;
@@ -50,13 +52,17 @@ bool Trainer::Initialize() {
             std::cout << "UI Renderer initialized successfully!" << std::endl;
         }
 
+        std::cout << "Attempting to install DirectX hooks..." << std::endl;
         if (!InstallHooks(gameWindowHandle, this, uiRenderer)) {
-            std::cout << "WARNING: Failed to install Direct3D hooks" << std::endl;
+            std::cout << "ERROR: Failed to install Direct3D hooks!" << std::endl;
+            std::cout << "The overlay will not work without DirectX hooks." << std::endl;
         } else {
-            std::cout << "Direct3D hooks installed" << std::endl;
+            std::cout << "SUCCESS: Direct3D hooks installed!" << std::endl;
+            std::cout << "Overlay should now render when INSERT is pressed." << std::endl;
         }
     } else {
-        std::cout << "WARNING: Could not find game window" << std::endl;
+        std::cout << "ERROR: Could not find game window!" << std::endl;
+        std::cout << "Make sure AssaultCube is running." << std::endl;
     }
     
     // Read LocalPlayer pointer from ac_client.exe + 0x0017E0A8

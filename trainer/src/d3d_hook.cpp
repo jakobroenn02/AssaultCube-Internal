@@ -138,6 +138,8 @@ bool TryResetDevice(IDirect3DDevice9* device) {
 
 HRESULT APIENTRY PresentDetour(IDirect3DDevice9* device, const RECT* srcRect, const RECT* dstRect,
                                HWND overrideWindow, const RGNDATA* dirtyRegion) {
+    // Note: No console output here - it's called every frame and can cause crashes
+
     if (!device) {
         return g_originalPresent ? g_originalPresent(device, srcRect, dstRect, overrideWindow, dirtyRegion)
                                  : D3DERR_INVALIDCALL;
@@ -188,42 +190,61 @@ HRESULT APIENTRY PresentDetour(IDirect3DDevice9* device, const RECT* srcRect, co
 bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer) {
     std::lock_guard<std::mutex> lock(g_hookMutex);
 
+    std::cout << "[D3D Hook] InstallHooks called. Window: " << gameWindow 
+              << ", Trainer: " << trainer << ", Renderer: " << renderer << std::endl;
+
     if (g_hooksInstalled) {
+        std::cout << "[D3D Hook] Hooks already installed, updating pointers." << std::endl;
         g_trainer = trainer;
         g_uiRenderer = renderer;
         return true;
     }
 
+    std::cout << "[D3D Hook] Creating temporary D3D device..." << std::endl;
     DeviceResources resources;
     if (!CreateTemporaryDevice(gameWindow, resources) || !resources.device) {
+        std::cout << "[D3D Hook] ERROR: Failed to create temporary device!" << std::endl;
         return false;
     }
+    std::cout << "[D3D Hook] Temporary device created: " << resources.device << std::endl;
 
     void** vtable = *reinterpret_cast<void***>(resources.device);
     if (!vtable) {
+        std::cout << "[D3D Hook] ERROR: Failed to get device vtable!" << std::endl;
         return false;
     }
+    std::cout << "[D3D Hook] Device vtable: " << vtable << std::endl;
 
     void* presentTarget = vtable[kPresentVTableIndex];
     if (!presentTarget) {
+        std::cout << "[D3D Hook] ERROR: Failed to get Present function pointer!" << std::endl;
         return false;
     }
+    std::cout << "[D3D Hook] Present function at: " << presentTarget << std::endl;
 
+    std::cout << "[D3D Hook] Initializing MinHook..." << std::endl;
     MH_STATUS status = MH_Initialize();
     if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) {
+        std::cout << "[D3D Hook] ERROR: MH_Initialize failed with status: " << status << std::endl;
         return false;
     }
+    std::cout << "[D3D Hook] MinHook initialized." << std::endl;
 
+    std::cout << "[D3D Hook] Creating hook for Present..." << std::endl;
     status = MH_CreateHook(presentTarget, reinterpret_cast<LPVOID>(&PresentDetour),
                            reinterpret_cast<LPVOID*>(&g_originalPresent));
     if (status != MH_OK && status != MH_ERROR_ALREADY_CREATED) {
+        std::cout << "[D3D Hook] ERROR: MH_CreateHook failed with status: " << status << std::endl;
         MH_Uninitialize();
         g_originalPresent = nullptr;
         return false;
     }
+    std::cout << "[D3D Hook] Hook created. Original Present: " << g_originalPresent << std::endl;
 
+    std::cout << "[D3D Hook] Enabling hook..." << std::endl;
     status = MH_EnableHook(presentTarget);
     if (status != MH_OK && status != MH_ERROR_ENABLED) {
+        std::cout << "[D3D Hook] ERROR: MH_EnableHook failed with status: " << status << std::endl;
         MH_RemoveHook(presentTarget);
         MH_Uninitialize();
         g_originalPresent = nullptr;
@@ -234,6 +255,8 @@ bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer) {
     g_hooksInstalled = true;
     g_trainer = trainer;
     g_uiRenderer = renderer;
+    
+    std::cout << "[D3D Hook] Hook installation complete! Present function is now hooked." << std::endl;
     return true;
 }
 

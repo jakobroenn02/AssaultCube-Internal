@@ -1,6 +1,6 @@
 #ifndef TRAINER_H
 #define TRAINER_H
-
+ 
 #include <Windows.h>
 #include <cstdint>
 #include <vector>

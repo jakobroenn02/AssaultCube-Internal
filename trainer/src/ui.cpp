@@ -122,13 +122,10 @@ void UIRenderer::InitializeImGui(IDirect3DDevice9* d3dDevice) {
 }
 
 void UIRenderer::UpdateMenuState() {
-    SHORT state = GetAsyncKeyState(VK_INSERT);
-    bool pressed = (state & 0x8000) != 0;
-    if (pressed && !insertHeld) {
-        menuVisible = !menuVisible;
-    }
-    insertHeld = pressed;
-
+    // Note: INSERT key is handled by the message hook in dllmain.cpp
+    // which calls SetMenuVisible() directly. We don't check it here
+    // to avoid conflicts between GetAsyncKeyState and the message hook.
+    
     if (!menuVisible) {
         selectedIndex = 0;
         upHeld = downHeld = enterHeld = false;
@@ -317,7 +314,7 @@ void UIRenderer::SetMenuVisible(bool visible) {
 }
 
 void UIRenderer::DrawMenu(const PlayerStats& stats) {
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
     const ImVec2 panelPos(24.0f, 24.0f);
 
     const float headerHeight = 36.0f;
@@ -403,6 +400,11 @@ void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
     ImGui::NewFrame();
 
     UpdateMenuState();
+
+    // ALWAYS draw a test rectangle to verify rendering works
+    ImDrawList* testDrawList = ImGui::GetForegroundDrawList();
+    testDrawList->AddRectFilled(ImVec2(10, 10), ImVec2(110, 60), IM_COL32(255, 0, 0, 255));
+    testDrawList->AddText(ImVec2(15, 15), IM_COL32(255, 255, 255, 255), "HOOK ACTIVE");
 
     if (menuVisible) {
         featureToggles = trainer.BuildFeatureToggles();
