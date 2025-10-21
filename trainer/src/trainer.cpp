@@ -2,7 +2,7 @@
 #include "trainer.h"
 #include "ui.h"
 #include "memory.h"
-#include "d3d_hook.h"
+#include "gl_hook.h"
 #include <iostream>
 
 Trainer::Trainer(uintptr_t base)
@@ -52,12 +52,12 @@ bool Trainer::Initialize() {
             std::cout << "UI Renderer initialized successfully!" << std::endl;
         }
 
-        std::cout << "Attempting to install DirectX hooks..." << std::endl;
+        std::cout << "Attempting to install OpenGL hooks..." << std::endl;
         if (!InstallHooks(gameWindowHandle, this, uiRenderer)) {
-            std::cout << "ERROR: Failed to install Direct3D hooks!" << std::endl;
-            std::cout << "The overlay will not work without DirectX hooks." << std::endl;
+            std::cout << "ERROR: Failed to install OpenGL hooks!" << std::endl;
+            std::cout << "The overlay will not work without OpenGL hooks." << std::endl;
         } else {
-            std::cout << "SUCCESS: Direct3D hooks installed!" << std::endl;
+            std::cout << "SUCCESS: OpenGL hooks installed!" << std::endl;
             std::cout << "Overlay should now render when INSERT is pressed." << std::endl;
         }
     } else {

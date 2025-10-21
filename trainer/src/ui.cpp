@@ -1,12 +1,10 @@
 #include "pch.h"
 #include "ui.h"
-#include <d3d9.h>
-
 #include "trainer.h"
 
 #include "imgui.h"
-#include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
+#include "imgui_impl_opengl3.h"
 #include <cstdio>
 #include <thread>
 #include <algorithm>
@@ -43,7 +41,6 @@ constexpr float kCornerRadius = 8.0f;
 
 UIRenderer::UIRenderer()
     : gameWindow(nullptr),
-      device(nullptr),
       imguiInitialized(false),
       menuVisible(false),
       insertHeld(false),
@@ -74,9 +71,13 @@ bool UIRenderer::Initialize(HWND targetWindow) {
     return true;
 }
 
-void UIRenderer::InitializeImGui(IDirect3DDevice9* d3dDevice) {
-    if (imguiInitialized || !d3dDevice || !gameWindow) {
-        return;
+bool UIRenderer::InitializeImGui() {
+    if (imguiInitialized) {
+        return true;
+    }
+
+    if (!gameWindow) {
+        return false;
     }
 
     IMGUI_CHECKVERSION();
@@ -114,11 +115,21 @@ void UIRenderer::InitializeImGui(IDirect3DDevice9* d3dDevice) {
         smallFont = textFont;
     }
 
-    ImGui_ImplWin32_Init(gameWindow);
-    ImGui_ImplDX9_Init(d3dDevice);
+    if (!ImGui_ImplWin32_InitForOpenGL(gameWindow)) {
+        std::cout << "Failed to initialize ImGui Win32 backend for OpenGL." << std::endl;
+        return false;
+    }
 
-    device = d3dDevice;
+    ImGui_ImplWin32_EnableAlphaCompositing(gameWindow);
+
+    if (!ImGui_ImplOpenGL3_Init("#version 130")) {
+        std::cout << "Failed to initialize ImGui OpenGL3 backend." << std::endl;
+        ImGui_ImplWin32_Shutdown();
+        return false;
+    }
+
     imguiInitialized = true;
+    return true;
 }
 
 void UIRenderer::UpdateMenuState() {
@@ -378,24 +389,23 @@ bool UIRenderer::HandleKeyEnter() {
     return false;
 }
 
-void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
-    if (!d3dDevice || !gameWindow) {
+void UIRenderer::Render(Trainer& trainer) {
+    if (!gameWindow) {
+        return;
+    }
+
+    HGLRC currentContext = wglGetCurrentContext();
+    if (!currentContext) {
         return;
     }
 
     if (!imguiInitialized) {
-        InitializeImGui(d3dDevice);
-    } else if (device != d3dDevice) {
-        ImGui_ImplDX9_Shutdown();
-        ImGui_ImplDX9_Init(d3dDevice);
-        device = d3dDevice;
+        if (!InitializeImGui()) {
+            return;
+        }
     }
 
-    if (!imguiInitialized) {
-        return;
-    }
-
-    ImGui_ImplDX9_NewFrame();
+    ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
@@ -416,25 +426,7 @@ void UIRenderer::Render(IDirect3DDevice9* d3dDevice, Trainer& trainer) {
     }
 
     ImGui::Render();
-    ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-}
-
-void UIRenderer::OnDeviceLost() {
-    if (!imguiInitialized) {
-        return;
-    }
-
-    ImGui_ImplDX9_InvalidateDeviceObjects();
-}
-
-void UIRenderer::OnDeviceReset(IDirect3DDevice9* d3dDevice) {
-    if (!imguiInitialized) {
-        InitializeImGui(d3dDevice);
-        return;
-    }
-
-    device = d3dDevice;
-    ImGui_ImplDX9_CreateDeviceObjects();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
@@ -501,13 +493,12 @@ bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
 
 void UIRenderer::Shutdown() {
     if (imguiInitialized) {
-        ImGui_ImplDX9_Shutdown();
+        ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
     }
 
     imguiInitialized = false;
-    device = nullptr;
     headerFont = nullptr;
     textFont = nullptr;
     smallFont = nullptr;
