@@ -219,13 +219,19 @@ void Trainer::ToggleInfiniteAmmo() {
     std::cout << "========================================" << std::endl;
     std::cout.flush();
     
-    if (infiniteAmmo && ammoAddress) {
-        int currentAmmo = Memory::Read<int>(ammoAddress);
-        std::cout << "  Current Ammo: " << currentAmmo << std::endl;
+    if (infiniteAmmo && playerBase) {
+        std::cout << "  Setting all weapon ammo to maximum..." << std::endl;
         std::cout.flush();
-        SetAmmo(100);
-        int newAmmo = Memory::Read<int>(ammoAddress);
-        std::cout << "  Set Ammo to 100, New Ammo: " << newAmmo << std::endl;
+        
+        // Set all weapon types to max ammo
+        Memory::Write<int>(playerBase + 0x12C, 100); // Pistol
+        Memory::Write<int>(playerBase + 0x134, 100); // Shotgun
+        Memory::Write<int>(playerBase + 0x138, 100); // Submachine Gun
+        Memory::Write<int>(playerBase + 0x13C, 100); // Sniper
+        Memory::Write<int>(playerBase + 0x140, 100); // Assault Rifle
+        Memory::Write<int>(playerBase + 0x144, 100); // Grenades
+        
+        std::cout << "  All weapon ammo set to 100" << std::endl;
         std::cout << "========================================\n" << std::endl;
         std::cout.flush();
     }
@@ -303,9 +309,14 @@ void Trainer::UpdatePlayerData() {
         }
     }
     
-    if (infiniteAmmo && ammoAddress) {
-        // Keep assault rifle ammo at max (100 in Assault Cube)
-        SetAmmo(100);
+    if (infiniteAmmo && playerBase) {
+        // Keep all weapon ammo at max (100 rounds per weapon in Assault Cube)
+        Memory::Write<int>(playerBase + 0x12C, 100); // Pistol Ammo
+        Memory::Write<int>(playerBase + 0x134, 100); // Shotgun Ammo
+        Memory::Write<int>(playerBase + 0x138, 100); // Submachine Gun Ammo
+        Memory::Write<int>(playerBase + 0x13C, 100); // Sniper Ammo
+        Memory::Write<int>(playerBase + 0x140, 100); // Assault Rifle Ammo
+        Memory::Write<int>(playerBase + 0x144, 100); // Grenade Ammo
     }
     
     if (regenHealth && healthAddress) {

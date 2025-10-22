@@ -47,6 +47,7 @@ UIRenderer::UIRenderer()
       upHeld(false),
       downHeld(false),
       enterHeld(false),
+      unloadRequestPending(false),
       selectedIndex(0),
       panelWidth(360),
       panelPadding(18),
@@ -214,10 +215,26 @@ void UIRenderer::HandleKeyUp() {
 float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) {
     float y = start.y;
     const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
+    ImGuiIO& io = ImGui::GetIO();
 
     for (size_t i = 0; i < featureToggles.size(); ++i) {
-        const bool isSelected = selectedIndex == static_cast<int>(i);
         const bool isActive = featureToggles[i].isActive ? featureToggles[i].isActive() : false;
+        
+        ImVec2 minVec(start.x, y);
+        ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
+        
+        // Check if mouse is hovering over this button
+        bool isHovered = io.MousePos.x >= minVec.x && io.MousePos.x <= maxVec.x &&
+                        io.MousePos.y >= minVec.y && io.MousePos.y <= maxVec.y;
+        
+        // Check for click
+        if (isHovered && ImGui::IsMouseClicked(0)) {
+            if (featureToggles[i].onToggle) {
+                featureToggles[i].onToggle();
+            }
+        }
+        
+        const bool isSelected = isHovered;
 
         ImVec2 minVec(start.x, y);
         ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
@@ -282,13 +299,22 @@ float UIRenderer::DrawPlayerStats(ImDrawList* drawList, const ImVec2& start, con
     return y + sectionSpacing;
 }
 
-float UIRenderer::DrawUnloadButton(ImDrawList* drawList, const ImVec2& start) {
+float UIRenderer::DrawUnloadButton(ImDrawList* drawList, const ImVec2& start, bool& requestUnload) {
     float y = start.y;
     const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
     ImVec2 minVec(start.x, y);
     ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
 
-    const bool isSelected = selectedIndex == -1;
+    ImGuiIO& io = ImGui::GetIO();
+    bool isHovered = io.MousePos.x >= minVec.x && io.MousePos.x <= maxVec.x &&
+                    io.MousePos.y >= minVec.y && io.MousePos.y <= maxVec.y;
+    
+    // Check for click
+    if (isHovered && ImGui::IsMouseClicked(0)) {
+        requestUnload = true;
+    }
+
+    const bool isSelected = isHovered;
     ImU32 bgColor = isSelected ? ColorU32(160, 60, 60) : ColorU32(120, 40, 40);
     ImU32 borderColor = isSelected ? ColorU32(200, 180, 100) : ColorU32(180, 80, 80);
 
@@ -353,7 +379,7 @@ void UIRenderer::DrawMenu(const PlayerStats& stats) {
                       "AC Trainer");
     y += headerHeight;
 
-    const char* hint = "UP/DOWN: Navigate | ENTER: Toggle | INSERT: Hide";
+    const char* hint = "Click to toggle features | INSERT: Hide";
     drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
                       smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
                       ImVec2(panelPos.x + panelPadding, y),
@@ -368,7 +394,12 @@ void UIRenderer::DrawMenu(const PlayerStats& stats) {
     y = DrawPlayerStats(drawList, sectionStart, stats);
 
     sectionStart = ImVec2(panelPos.x + panelPadding, y);
-    y = DrawUnloadButton(drawList, sectionStart);
+    bool unloadRequested = false;
+    y = DrawUnloadButton(drawList, sectionStart, unloadRequested);
+    
+    if (unloadRequested) {
+        unloadRequestPending = true;
+    }
 }
 
 bool UIRenderer::HandleKeyEnter() {
@@ -421,6 +452,12 @@ void UIRenderer::Render(Trainer& trainer) {
         PlayerStats stats = trainer.GetPlayerStats();
         UpdateNavigation(trainer);
         DrawMenu(stats);
+        
+        // Check if unload was requested via mouse click
+        if (unloadRequestPending) {
+            trainer.RequestUnload();
+            unloadRequestPending = false;
+        }
     } else {
         featureToggles.clear();
     }

@@ -35,6 +35,7 @@ private:
     bool upHeld;
     bool downHeld;
     bool enterHeld;
+    bool unloadRequestPending;
 
     int selectedIndex;
     int panelWidth;
@@ -53,7 +54,7 @@ private:
     void DrawMenu(const PlayerStats& stats);
     float DrawFeatureToggles(struct ImDrawList* drawList, const struct ImVec2& start);
     float DrawPlayerStats(struct ImDrawList* drawList, const struct ImVec2& start, const PlayerStats& stats);
-    float DrawUnloadButton(struct ImDrawList* drawList, const struct ImVec2& start);
+    float DrawUnloadButton(struct ImDrawList* drawList, const struct ImVec2& start, bool& requestUnload);
 
 public:
     UIRenderer();
