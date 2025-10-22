@@ -16,7 +16,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 set(SOURCES
     src/dllmain.cpp
     src/trainer.cpp
-    src/d3d_hook.cpp
+    src/gl_hook.cpp
     src/ui.cpp
     src/pch.cpp
 )
@@ -26,7 +26,7 @@ set(IMGUI_SOURCES
     third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_tables.cpp
     third_party/imgui/imgui_widgets.cpp
-    third_party/imgui/imgui_impl_dx9.cpp
+    third_party/imgui/imgui_impl_opengl3.cpp
     third_party/imgui/imgui_impl_win32.cpp
 )
 
@@ -34,7 +34,7 @@ set(IMGUI_SOURCES
 set(HEADERS
     include/trainer.h
     include/memory.h
-    include/d3d_hook.h
+    include/gl_hook.h
     src/pch.h
 )
 
@@ -59,7 +59,8 @@ add_library(ACTrainer SHARED ${SOURCES} ${IMGUI_SOURCES} ${HEADERS})
 target_link_libraries(ACTrainer
     minhook
     psapi
-    d3d9
+    opengl32
+    gdi32
     imm32
 )
 

@@ -7,7 +7,6 @@
 #include <vector>
 
 class Trainer;
-struct IDirect3DDevice9;
 struct ImFont;
 struct ImDrawList;
 struct ImVec2;
@@ -30,8 +29,6 @@ struct PlayerStats {
 class UIRenderer {
 private:
     HWND gameWindow;
-    IDirect3DDevice9* device;
-
     bool imguiInitialized;
     bool menuVisible;
     bool insertHeld;
@@ -50,7 +47,7 @@ private:
 
     std::vector<FeatureToggle> featureToggles;
 
-    void InitializeImGui(IDirect3DDevice9* d3dDevice);
+    bool InitializeImGui();
     void UpdateMenuState();
     void UpdateNavigation(Trainer& trainer);
     void DrawMenu(const PlayerStats& stats);
@@ -66,8 +63,10 @@ public:
     bool Initialize(HWND targetWindow);
 
     // Render the main UI panel with interactive toggles
-    void Render(const std::vector<FeatureToggle>& toggles, const PlayerStats& stats);
-    
+    void Render(Trainer& trainer);
+
+    bool IsImGuiInitialized() const { return imguiInitialized; }
+
     // Menu visibility
     void ToggleMenu();
     bool IsMenuVisible() const { return menuVisible; }
@@ -85,20 +84,6 @@ public:
     int GetSelectedIndex() const { return selectedIndex; }
     size_t GetToggleCount() const { return featureToggles.size(); }
     
-    // Render individual components
-    void RenderPanel();
-    void RenderFeatureToggles(int& yOffset);
-    void RenderPlayerStats(int& yOffset, const PlayerStats& stats);
-    void RenderUnloadButton(int& yOffset);
-    void RenderText(int x, int y, const std::string& text, COLORREF color, HFONT font);
-    void RenderToggleButton(int x, int y, int index, const FeatureToggle& toggle);
-    
-    // this should may or may not be here
-    void Render(IDirect3DDevice9* device, Trainer& trainer);
-
-    void OnDeviceLost();
-    void OnDeviceReset(IDirect3DDevice9* d3dDevice);
-
     // Cleanup
     void Shutdown();
 };
