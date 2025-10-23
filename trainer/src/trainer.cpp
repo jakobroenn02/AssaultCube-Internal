@@ -20,7 +20,9 @@ Trainer::Trainer(uintptr_t base)
       playerBase(0),
       healthAddress(0),
       armorAddress(0),
-      ammoAddress(0) {}
+      ammoAddress(0),
+      recoilXAddress(0),
+      recoilYAddress(0) {}
 
 Trainer::~Trainer() {
     // Restore recoil bytes if patched
@@ -79,10 +81,14 @@ bool Trainer::Initialize() {
     healthAddress = playerBase + 0xEC;  // Health Value
     armorAddress = playerBase + 0xF0;   // Armor Value
     ammoAddress = playerBase + 0x140;   // Assault Rifle Ammo
+    recoilXAddress = playerBase + OFFSET_RECOIL_X;  // Recoil X Component
+    recoilYAddress = playerBase + OFFSET_RECOIL_Y;  // Recoil Y Component
     
     std::cout << "Health address: 0x" << std::hex << healthAddress << std::dec << std::endl;
     std::cout << "Armor address: 0x" << std::hex << armorAddress << std::dec << std::endl;
     std::cout << "Ammo address: 0x" << std::hex << ammoAddress << std::dec << std::endl;
+    std::cout << "Recoil X address: 0x" << std::hex << recoilXAddress << std::dec << std::endl;
+    std::cout << "Recoil Y address: 0x" << std::hex << recoilYAddress << std::dec << std::endl;
     
     // Find recoil patch address
     if (FindRecoilPatchAddress()) {
@@ -241,16 +247,19 @@ void Trainer::ToggleNoRecoil() {
     noRecoil = !noRecoil;
     std::cout << "\n========================================" << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
+    
+    if (noRecoil) {
+        if (recoilXAddress && recoilYAddress) {
+            std::cout << "  Recoil components will be zeroed every frame" << std::endl;
+            std::cout << "  Recoil X: 0x" << std::hex << recoilXAddress << std::dec << std::endl;
+            std::cout << "  Recoil Y: 0x" << std::hex << recoilYAddress << std::dec << std::endl;
+        } else {
+            std::cout << "  WARNING: Recoil addresses not found" << std::endl;
+        }
+    }
+    
     std::cout << "========================================\n" << std::endl;
     std::cout.flush();
-    
-    if (noRecoil && recoilPatchAddress != 0) {
-        ApplyRecoilPatch();
-    } else if (!noRecoil && recoilPatched) {
-        RestoreRecoilBytes();
-    } else if (recoilPatchAddress == 0) {
-        std::cout << "  WARNING: Recoil patch address not found" << std::endl;
-    }
 }
 
 void Trainer::SetHealth(int value) {
@@ -317,6 +326,12 @@ void Trainer::UpdatePlayerData() {
         Memory::Write<int>(playerBase + 0x13C, 100); // Sniper Ammo
         Memory::Write<int>(playerBase + 0x140, 100); // Assault Rifle Ammo
         Memory::Write<int>(playerBase + 0x144, 100); // Grenade Ammo
+    }
+    
+    if (noRecoil && recoilXAddress && recoilYAddress) {
+        // Zero out recoil components every frame
+        Memory::Write<int>(recoilXAddress, 0); // X recoil (horizontal)
+        Memory::Write<int>(recoilYAddress, 0); // Y recoil (vertical)
     }
     
     if (regenHealth && healthAddress) {
