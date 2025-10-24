@@ -36,6 +36,9 @@ private:
     bool downHeld;
     bool enterHeld;
     bool unloadRequestPending;
+    RECT savedClipRect;
+    bool hasSavedClipRect;
+    std::function<void(bool)> onMenuVisibilityChanged;
 
     int selectedIndex;
     int panelWidth;
@@ -72,6 +75,7 @@ public:
     void ToggleMenu();
     bool IsMenuVisible() const { return menuVisible; }
     void SetMenuVisible(bool visible);
+    void SetMenuVisibilityCallback(std::function<void(bool)> callback) { onMenuVisibilityChanged = callback; }
 
     // Keyboard navigation
     void HandleKeyDown();   // Arrow DOWN

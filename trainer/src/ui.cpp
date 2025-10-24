@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ui.h"
 #include "trainer.h"
+#include "memory.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -48,13 +49,16 @@ UIRenderer::UIRenderer()
       downHeld(false),
       enterHeld(false),
       unloadRequestPending(false),
+      hasSavedClipRect(false),
       selectedIndex(0),
       panelWidth(360),
       panelPadding(18),
       sectionSpacing(22),
       headerFont(nullptr),
       textFont(nullptr),
-      smallFont(nullptr) {}
+      smallFont(nullptr) {
+    savedClipRect = {0, 0, 0, 0};
+}
 
 UIRenderer::~UIRenderer() {
     Shutdown();
@@ -85,7 +89,6 @@ bool UIRenderer::InitializeImGui() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.MouseDrawCursor = true;  // Enable ImGui to draw its own cursor
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
 
@@ -342,9 +345,47 @@ void UIRenderer::SetMenuVisible(bool visible) {
     }
 
     menuVisible = visible;
+    
+    // Notify callback about visibility change
+    if (onMenuVisibilityChanged) {
+        onMenuVisibilityChanged(visible);
+    }
 
     if (!menuVisible) {
         selectedIndex = 0;
+        
+        // Restore the game's original cursor clipping when menu closes
+        if (hasSavedClipRect) {
+            std::cout << "[UI] Restoring cursor clip to game's lock" << std::endl;
+            ClipCursor(&savedClipRect);
+            hasSavedClipRect = false;
+        } else {
+            std::cout << "[UI] No saved clip rect to restore" << std::endl;
+        }
+        
+        // Hide the ImGui cursor
+        ShowCursor(FALSE);
+    } else {
+        // Save the current cursor clipping (game's lock) before unlocking
+        if (GetClipCursor(&savedClipRect)) {
+            hasSavedClipRect = true;
+            std::cout << "[UI] Saved cursor clip rect: (" << savedClipRect.left << "," << savedClipRect.top 
+                     << ") to (" << savedClipRect.right << "," << savedClipRect.bottom << ")" << std::endl;
+        } else {
+            std::cout << "[UI] Failed to get current cursor clip rect" << std::endl;
+        }
+        
+        // Unlock the cursor when menu opens
+        std::cout << "[UI] Unlocking cursor with ClipCursor(NULL)" << std::endl;
+        ClipCursor(NULL);  // Remove cursor clipping
+        ShowCursor(TRUE);  // Show the cursor
+        
+        // Verify it worked
+        RECT currentClip;
+        if (GetClipCursor(&currentClip)) {
+            std::cout << "[UI] Current clip after unlock: (" << currentClip.left << "," << currentClip.top 
+                     << ") to (" << currentClip.right << "," << currentClip.bottom << ")" << std::endl;
+        }
     }
 }
 
@@ -438,6 +479,42 @@ void UIRenderer::Render(Trainer& trainer) {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
+    // Control ImGui cursor visibility based on menu state
+    ImGuiIO& io = ImGui::GetIO();
+    io.MouseDrawCursor = menuVisible;  // Only draw cursor when menu is visible
+    
+    // Keep cursor unlocked while menu is visible (game may try to re-lock it every frame)
+    static bool firstFrame = true;
+    if (menuVisible) {
+        // Completely unlock cursor - no clipping at all
+        ClipCursor(NULL);
+        
+        // On first frame of menu opening, move cursor away from center to UI
+        if (firstFrame) {
+            POINT cursorPos;
+            GetCursorPos(&cursorPos);
+            ScreenToClient(gameWindow, &cursorPos);
+            
+            // If cursor is near center, move it to the menu position
+            RECT clientRect;
+            GetClientRect(gameWindow, &clientRect);
+            int centerX = clientRect.right / 2;
+            int centerY = clientRect.bottom / 2;
+            
+            // Check if cursor is within 50 pixels of center
+            if (abs(cursorPos.x - centerX) < 50 && abs(cursorPos.y - centerY) < 50) {
+                // Move cursor to menu area (top-left where our menu is)
+                POINT newPos = {100, 100};
+                ClientToScreen(gameWindow, &newPos);
+                SetCursorPos(newPos.x, newPos.y);
+            }
+            
+            firstFrame = false;
+        }
+    } else {
+        firstFrame = true;
+    }
+
     UpdateMenuState();
 
     // ALWAYS draw a test rectangle to verify rendering works
@@ -456,6 +533,14 @@ void UIRenderer::Render(Trainer& trainer) {
             trainer.RequestUnload();
             unloadRequestPending = false;
         }
+        // Aggressively clear game's mouse lock/capture each frame while UI is open
+        // (addresses provided by user)
+        constexpr uintptr_t kMouseLockAddr = 0x00593F19;
+        constexpr uintptr_t kMouseCaptureAddr = 0x00593F13;
+        constexpr uintptr_t kRelMouseAddr = 0x0056D925;
+        Memory::Write<uint8_t>(kMouseLockAddr, 0);
+        Memory::Write<uint8_t>(kMouseCaptureAddr, 0);
+        Memory::Write<uint8_t>(kRelMouseAddr, 0);
     } else {
         featureToggles.clear();
     }

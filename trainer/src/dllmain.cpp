@@ -4,6 +4,7 @@
 #include <thread>
 #include <atomic>
 #include "trainer.h"
+#include "ui.h"
 #include "memory.h"
 #include "imgui_impl_win32.h"
 
@@ -45,14 +46,18 @@ LRESULT CALLBACK GetMessageHookProc(int code, WPARAM wParam, LPARAM lParam) {
                 // Pass messages to ImGui first so it can handle mouse input
                 ImGui_ImplWin32_WndProcHandler(msg->hwnd, msg->message, msg->wParam, msg->lParam);
                 
-                // Then let trainer process it
-                bool trainerHandled = g_trainerInstance->ProcessMessage(*msg, true);
+                // Block keyboard and RAW MOUSE INPUT when menu is visible
+                // WM_INPUT is used by games for raw mouse movement (camera control)
+                bool isKeyboardMessage = (msg->message >= WM_KEYFIRST && msg->message <= WM_KEYLAST);
+                bool isRawInput = (msg->message == WM_INPUT);
                 
-                // Only block keyboard messages, not mouse messages
-                // This allows the game to still receive mouse input
-                if (trainerHandled) {
+                if ((isKeyboardMessage && msg->wParam != VK_ESCAPE) || isRawInput) {
+                    // Block keyboard (except ESC) and raw input
                     handled = true;
                 }
+                
+                // Let trainer process for ESC handling
+                g_trainerInstance->ProcessMessage(*msg, true);
             }
 
             if (handled) {
@@ -144,6 +149,55 @@ DWORD WINAPI MainThread(LPVOID lpParameter) {
         std::cout << "F3  - Toggle No Recoil" << std::endl;
         std::cout << "F4  - Add 1000 Health" << std::endl;
         std::cout << "END - Exit Trainer" << std::endl;
+
+        // Set up callback to sync input capture state with UI visibility
+        if (trainer->GetUIRenderer()) {
+            // Save/restore game mouse lock bytes when menu visibility changes.
+            // Addresses provided by user (ac_offsets.md):
+            // 0x00593F19 - Mouse Lock State (0 = unlocked, 1 = locked)
+            // 0x00593F13 - Mouse Capture State (0 = not captured, 1 = captured)
+            // 0x0056D925 - Relative Mouse Config (0 = disabled, 1 = enabled)
+            static const uintptr_t kMouseLockAddr = 0x00593F19;
+            static const uintptr_t kMouseCaptureAddr = 0x00593F13;
+            static const uintptr_t kRelMouseAddr = 0x0056D925;
+            static uint8_t savedLock = 0;
+            static uint8_t savedCapture = 0;
+            static uint8_t savedRel = 0;
+            static bool savedValid = false;
+
+            trainer->GetUIRenderer()->SetMenuVisibilityCallback([=](bool visible) mutable {
+                // Sync input capture flag used by our hook
+                g_inputCaptureEnabled.store(visible);
+
+                // When showing menu, clear game's mouse lock/capture so the game stops fighting our cursor
+                if (visible) {
+                    if (!savedValid) {
+                        // Read current values and save them
+                        savedLock = Memory::Read<uint8_t>(kMouseLockAddr);
+                        savedCapture = Memory::Read<uint8_t>(kMouseCaptureAddr);
+                        savedRel = Memory::Read<uint8_t>(kRelMouseAddr);
+                        savedValid = true;
+                    }
+
+                    // Write zeros to unlock/capture flags
+                    Memory::Write<uint8_t>(kMouseLockAddr, 0);
+                    Memory::Write<uint8_t>(kMouseCaptureAddr, 0);
+                    Memory::Write<uint8_t>(kRelMouseAddr, 0);
+                    std::cout << "[UI] Cleared game mouse lock/capture flags while menu is open" << std::endl;
+                } else {
+                    // Restore saved values when hiding menu
+                    if (savedValid) {
+                        Memory::Write<uint8_t>(kMouseLockAddr, savedLock);
+                        Memory::Write<uint8_t>(kMouseCaptureAddr, savedCapture);
+                        Memory::Write<uint8_t>(kRelMouseAddr, savedRel);
+                        savedValid = false;
+                        std::cout << "[UI] Restored game mouse lock/capture flags" << std::endl;
+                    }
+                }
+
+                std::cout << "Input capture state synced: " << (visible ? "enabled" : "disabled") << std::endl;
+            });
+        }
 
         if (!InstallInputHook(trainer->GetGameWindowHandle())) {
             std::cout << "WARNING: Failed to install input hook. Falling back to polling input." << std::endl;

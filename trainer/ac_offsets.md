@@ -901,6 +901,17 @@ Based on analysis, weapon objects contain:
 | `0x00516A50` | SpawnEffect | Spawns visual effects |
 | `0x004D44C0` | TriggerEvent | Triggers game events |
 
+
+Primary Control Variables (all are single bytes):
+
+0x593f19 - Mouse Lock State (0 = unlocked, 1 = locked) - Most important!
+0x593f13 - Mouse Capture State (0 = not captured, 1 = captured)
+0x56d925 - Relative Mouse Config (0 = disabled, 1 = enabled)
+
+Function to hook (if you prefer that approach):
+
+SetMouseLockMode at offset 0x4f1b60
+
 ---
 
 ## 🎯 Common Trainer Features Implementation
