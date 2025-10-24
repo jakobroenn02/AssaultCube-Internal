@@ -34,6 +34,8 @@ private:
     uintptr_t healthAddress;
     uintptr_t armorAddress;
     uintptr_t ammoAddress;
+    uintptr_t recoilXAddress;
+    uintptr_t recoilYAddress;
 
     // Frame timing
     std::chrono::steady_clock::time_point lastRenderTime;
@@ -55,6 +57,8 @@ private:
     static constexpr uintptr_t OFFSET_HEALTH = 0xEC;
     static constexpr uintptr_t OFFSET_ARMOR = 0xF0;
     static constexpr uintptr_t OFFSET_TEAM_ID = 0x30C;
+    static constexpr uintptr_t OFFSET_RECOIL_X = 0xCB;
+    static constexpr uintptr_t OFFSET_RECOIL_Y = 0xCC;
     
     // Ammo offsets
     static constexpr uintptr_t OFFSET_AR_AMMO = 0x140;
