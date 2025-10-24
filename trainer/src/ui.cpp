@@ -533,14 +533,8 @@ void UIRenderer::Render(Trainer& trainer) {
             trainer.RequestUnload();
             unloadRequestPending = false;
         }
-        // Aggressively clear game's mouse lock/capture each frame while UI is open
-        // (addresses provided by user)
-        constexpr uintptr_t kMouseLockAddr = 0x00593F19;
-        constexpr uintptr_t kMouseCaptureAddr = 0x00593F13;
-        constexpr uintptr_t kRelMouseAddr = 0x0056D925;
-        Memory::Write<uint8_t>(kMouseLockAddr, 0);
-        Memory::Write<uint8_t>(kMouseCaptureAddr, 0);
-        Memory::Write<uint8_t>(kRelMouseAddr, 0);
+        // TODO: Mouse lock memory writes disabled temporarily (were causing crashes)
+        // Need to verify correct addresses and add error handling
     } else {
         featureToggles.clear();
     }

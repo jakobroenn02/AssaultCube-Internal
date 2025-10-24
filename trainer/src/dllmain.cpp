@@ -6,6 +6,7 @@
 #include "trainer.h"
 #include "ui.h"
 #include "memory.h"
+#include "cursor_hook.h"
 #include "imgui_impl_win32.h"
 
 // Forward declare ImGui's Win32 message handler
@@ -152,49 +153,21 @@ DWORD WINAPI MainThread(LPVOID lpParameter) {
 
         // Set up callback to sync input capture state with UI visibility
         if (trainer->GetUIRenderer()) {
-            // Save/restore game mouse lock bytes when menu visibility changes.
-            // Addresses provided by user (ac_offsets.md):
-            // 0x00593F19 - Mouse Lock State (0 = unlocked, 1 = locked)
-            // 0x00593F13 - Mouse Capture State (0 = not captured, 1 = captured)
-            // 0x0056D925 - Relative Mouse Config (0 = disabled, 1 = enabled)
-            static const uintptr_t kMouseLockAddr = 0x00593F19;
-            static const uintptr_t kMouseCaptureAddr = 0x00593F13;
-            static const uintptr_t kRelMouseAddr = 0x0056D925;
-            static uint8_t savedLock = 0;
-            static uint8_t savedCapture = 0;
-            static uint8_t savedRel = 0;
-            static bool savedValid = false;
-
+            // Install ClipCursor hook to prevent game from locking cursor
+            if (InstallCursorHook()) {
+                std::cout << "ClipCursor hook installed successfully!" << std::endl;
+            } else {
+                std::cout << "WARNING: Failed to install ClipCursor hook" << std::endl;
+            }
+            
+            // Set up visibility callback to control cursor clipping
             trainer->GetUIRenderer()->SetMenuVisibilityCallback([=](bool visible) mutable {
                 // Sync input capture flag used by our hook
                 g_inputCaptureEnabled.store(visible);
-
-                // When showing menu, clear game's mouse lock/capture so the game stops fighting our cursor
-                if (visible) {
-                    if (!savedValid) {
-                        // Read current values and save them
-                        savedLock = Memory::Read<uint8_t>(kMouseLockAddr);
-                        savedCapture = Memory::Read<uint8_t>(kMouseCaptureAddr);
-                        savedRel = Memory::Read<uint8_t>(kRelMouseAddr);
-                        savedValid = true;
-                    }
-
-                    // Write zeros to unlock/capture flags
-                    Memory::Write<uint8_t>(kMouseLockAddr, 0);
-                    Memory::Write<uint8_t>(kMouseCaptureAddr, 0);
-                    Memory::Write<uint8_t>(kRelMouseAddr, 0);
-                    std::cout << "[UI] Cleared game mouse lock/capture flags while menu is open" << std::endl;
-                } else {
-                    // Restore saved values when hiding menu
-                    if (savedValid) {
-                        Memory::Write<uint8_t>(kMouseLockAddr, savedLock);
-                        Memory::Write<uint8_t>(kMouseCaptureAddr, savedCapture);
-                        Memory::Write<uint8_t>(kRelMouseAddr, savedRel);
-                        savedValid = false;
-                        std::cout << "[UI] Restored game mouse lock/capture flags" << std::endl;
-                    }
-                }
-
+                
+                // Block the game's cursor clipping when menu is visible
+                SetCursorClipBlocked(visible);
+                
                 std::cout << "Input capture state synced: " << (visible ? "enabled" : "disabled") << std::endl;
             });
         }
@@ -212,6 +185,7 @@ DWORD WINAPI MainThread(LPVOID lpParameter) {
     }
 
     RemoveInputHook();
+    RemoveCursorHook();
 
     delete trainer;
     g_trainerInstance = nullptr;

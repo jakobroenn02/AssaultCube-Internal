@@ -48,14 +48,15 @@ type model struct {
 
 // initialModel creates the initial application model
 func initialModel() model {
+	// TEMPORARY: Skip login and go directly to dashboard
 	return model{
-		currentView:          views.MenuViewType,
-		currentUser:          "",
+		currentView:          views.DashboardViewType, // Changed from MenuViewType
+		currentUser:          "testuser",              // Temporary user
 		menuModel:            views.NewMenuModel(),
 		loginModel:           views.NewLoginModel(DB),
 		registerModel:        views.NewRegisterModel(DB),
-		dashboardModel:       views.NewDashboardModel(""),
-		loadAssaultCubeModel: views.NewLoadAssaultCubeModel(""),
+		dashboardModel:       views.NewDashboardModel("testuser"),       // Changed from ""
+		loadAssaultCubeModel: views.NewLoadAssaultCubeModel("testuser"), // Changed from ""
 		resetPasswordModel:   views.NewResetPasswordModel("", DB),
 	}
 }
@@ -208,17 +209,17 @@ func (m model) View() string {
 }
 
 func main() {
-	// Load configuration
+	// TEMPORARY: Skip database initialization for quick testing
+	// Load configuration (but don't fail if it errors)
 	config, err := LoadConfig("appsettings.json")
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Printf("Warning: Failed to load configuration: %v (continuing anyway)", err)
 	}
 
-	// Initialize database connection
-	if err := InitDB(config); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+	// Skip database initialization
+	if config != nil {
+		log.Println("Database initialization skipped for testing")
 	}
-	defer CloseDB()
 
 	// Clear terminal before starting TUI (cross-platform)
 	clearScreen()

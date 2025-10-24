@@ -139,7 +139,7 @@ void Trainer::Run() {
         }
         
         // Update player data if features are active
-        if (godMode || infiniteAmmo || regenHealth) {
+        if (godMode || infiniteAmmo || noRecoil || regenHealth) {
             UpdatePlayerData();
         }
 
@@ -328,10 +328,11 @@ void Trainer::UpdatePlayerData() {
         Memory::Write<int>(playerBase + 0x144, 100); // Grenade Ammo
     }
     
-    if (noRecoil && recoilXAddress && recoilYAddress) {
+    if (noRecoil && playerBase) {
         // Zero out recoil components every frame
-        Memory::Write<int>(recoilXAddress, 0); // X recoil (horizontal)
-        Memory::Write<int>(recoilYAddress, 0); // Y recoil (vertical)
+        // Recoil offsets are relative to player entity
+        Memory::Write<int>(playerBase + 0xCB, 0); // X recoil (horizontal)
+        Memory::Write<int>(playerBase + 0xCC, 0); // Y recoil (vertical)
     }
     
     if (regenHealth && healthAddress) {
