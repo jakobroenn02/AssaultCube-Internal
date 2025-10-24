@@ -67,22 +67,15 @@ bool Trainer::Initialize() {
         std::cout << "Make sure AssaultCube is running." << std::endl;
     }
     
-    // Read LocalPlayer pointer from ac_client.exe + 0x0017E0A8
-    playerBase = Memory::Read<uintptr_t>(moduleBase + 0x0017E0A8);
-    
+    RefreshPlayerAddresses();
+
     if (playerBase == 0) {
-        std::cout << "ERROR: Failed to read player base from 0x" << std::hex << (moduleBase + 0x0017E0A8) << std::dec << std::endl;
+        std::cout << "ERROR: Failed to read player base from 0x" << std::hex
+                  << (moduleBase + OFFSET_LOCALPLAYER) << std::dec << std::endl;
         return false;
     }
-    
+
     std::cout << "Player base found at: 0x" << std::hex << playerBase << std::dec << std::endl;
-    
-    // Calculate addresses using found offsets
-    healthAddress = playerBase + 0xEC;  // Health Value
-    armorAddress = playerBase + 0xF0;   // Armor Value
-    ammoAddress = playerBase + 0x140;   // Assault Rifle Ammo
-    recoilXAddress = playerBase + OFFSET_RECOIL_X;  // Recoil X Component
-    recoilYAddress = playerBase + OFFSET_RECOIL_Y;  // Recoil Y Component
     
     std::cout << "Health address: 0x" << std::hex << healthAddress << std::dec << std::endl;
     std::cout << "Armor address: 0x" << std::hex << armorAddress << std::dec << std::endl;
@@ -184,6 +177,8 @@ void Trainer::SetOverlayMenuVisible(bool visible) {
 }
 
 void Trainer::ToggleGodMode() {
+    RefreshPlayerAddresses();
+
     godMode = !godMode;
     
     
@@ -219,6 +214,8 @@ void Trainer::ToggleGodMode() {
 }
 
 void Trainer::ToggleInfiniteAmmo() {
+    RefreshPlayerAddresses();
+
     infiniteAmmo = !infiniteAmmo;
     std::cout << "\n========================================" << std::endl;
     std::cout << "Infinite Ammo: " << (infiniteAmmo ? "ON" : "OFF") << std::endl;
@@ -244,20 +241,36 @@ void Trainer::ToggleInfiniteAmmo() {
 }
 
 void Trainer::ToggleNoRecoil() {
+    RefreshPlayerAddresses();
+
     noRecoil = !noRecoil;
     std::cout << "\n========================================" << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
-    
+
     if (noRecoil) {
+        if (!recoilPatchAddress) {
+            FindRecoilPatchAddress();
+        }
         if (recoilXAddress && recoilYAddress) {
             std::cout << "  Recoil components will be zeroed every frame" << std::endl;
             std::cout << "  Recoil X: 0x" << std::hex << recoilXAddress << std::dec << std::endl;
             std::cout << "  Recoil Y: 0x" << std::hex << recoilYAddress << std::dec << std::endl;
+            Memory::Write<int>(recoilXAddress, 0);
+            Memory::Write<int>(recoilYAddress, 0);
         } else {
             std::cout << "  WARNING: Recoil addresses not found" << std::endl;
         }
+        if (recoilPatchAddress) {
+            ApplyRecoilPatch();
+        } else {
+            std::cout << "  WARNING: Recoil patch not available" << std::endl;
+        }
+    } else {
+        if (recoilPatched) {
+            RestoreRecoilBytes();
+        }
     }
-    
+
     std::cout << "========================================\n" << std::endl;
     std::cout.flush();
 }
@@ -281,9 +294,9 @@ void Trainer::SetAmmo(int value) {
 }
 
 bool Trainer::FindPlayerBase() {
-    // We now read this directly in Initialize() from moduleBase + 0x0017E0A8
+    // We now read this directly in Initialize() from moduleBase + OFFSET_LOCALPLAYER
     // This function is kept for compatibility but isn't needed anymore
-    playerBase = Memory::Read<uintptr_t>(moduleBase + 0x0017E0A8);
+    playerBase = Memory::Read<uintptr_t>(moduleBase + OFFSET_LOCALPLAYER);
     return playerBase != 0;
 }
 
@@ -306,6 +319,8 @@ bool Trainer::FindAmmoAddress() {
 }
 
 void Trainer::UpdatePlayerData() {
+    RefreshPlayerAddresses();
+
     // Called in main loop to maintain active features
     if (godMode && healthAddress) {
         int currentHealth = Memory::Read<int>(healthAddress);
@@ -331,8 +346,12 @@ void Trainer::UpdatePlayerData() {
     if (noRecoil && playerBase) {
         // Zero out recoil components every frame
         // Recoil offsets are relative to player entity
-        Memory::Write<int>(playerBase + 0xCB, 0); // X recoil (horizontal)
-        Memory::Write<int>(playerBase + 0xCC, 0); // Y recoil (vertical)
+        if (recoilXAddress) {
+            Memory::Write<int>(recoilXAddress, 0); // X recoil (horizontal)
+        }
+        if (recoilYAddress) {
+            Memory::Write<int>(recoilYAddress, 0); // Y recoil (vertical)
+        }
     }
     
     if (regenHealth && healthAddress) {
@@ -417,26 +436,42 @@ void Trainer::RequestUnload() {
 
 // Find recoil patch address using pattern scanning
 bool Trainer::FindRecoilPatchAddress() {
-    // TODO: Implement pattern scanning to find recoil code
-    // For now, return false - will need Cheat Engine analysis
-    recoilPatchAddress = 0;
-    return false;
+    uintptr_t baseAddress = 0;
+    size_t moduleSize = 0;
+
+    if (!Memory::GetModuleInfo("ac_client.exe", baseAddress, moduleSize)) {
+        std::cout << "WARNING: Failed to query module info for recoil scan" << std::endl;
+        recoilPatchAddress = 0;
+        return false;
+    }
+
+    const char pattern[] = "\xF3\x0F\x11\x83\xCC\x00\x00\x00\xF3\x0F\x11\x8B\xC8\x00\x00\x00";
+    const char mask[] = "xxxxxxxxxxxxxxxx";
+
+    recoilPatchAddress = Memory::FindPattern(baseAddress, moduleSize, pattern, mask);
+
+    if (recoilPatchAddress == 0) {
+        std::cout << "WARNING: Recoil pattern scan failed" << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 // Apply recoil patch (NOP the recoil instruction)
 void Trainer::ApplyRecoilPatch() {
     if (recoilPatchAddress == 0 || recoilPatched) return;
-    
+
     // Save original bytes (assuming 5-byte instruction)
-    originalRecoilBytes.resize(5);
-    for (size_t i = 0; i < 5; i++) {
+    constexpr size_t patchSize = 16;
+    originalRecoilBytes.resize(patchSize);
+    for (size_t i = 0; i < patchSize; i++) {
         originalRecoilBytes[i] = Memory::Read<BYTE>(recoilPatchAddress + i);
     }
-    
+
     // Apply NOP patch
-    BYTE nops[5] = {0x90, 0x90, 0x90, 0x90, 0x90};
-    for (size_t i = 0; i < 5; i++) {
-        Memory::Write<BYTE>(recoilPatchAddress + i, nops[i]);
+    for (size_t i = 0; i < patchSize; i++) {
+        Memory::Write<BYTE>(recoilPatchAddress + i, 0x90);
     }
     
     recoilPatched = true;
@@ -462,6 +497,28 @@ void Trainer::DisplayStatus() {
     std::cout << "Infinite Ammo: " << (infiniteAmmo ? "ON" : "OFF") << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
     std::cout << "Regen Health: " << (regenHealth ? "ON" : "OFF") << std::endl;
+}
+
+void Trainer::RefreshPlayerAddresses() {
+    uintptr_t newPlayerBase = Memory::Read<uintptr_t>(moduleBase + OFFSET_LOCALPLAYER);
+
+    if (newPlayerBase != playerBase) {
+        playerBase = newPlayerBase;
+
+        if (playerBase) {
+            healthAddress = playerBase + OFFSET_HEALTH;
+            armorAddress = playerBase + OFFSET_ARMOR;
+            ammoAddress = playerBase + OFFSET_AR_AMMO;
+            recoilXAddress = playerBase + OFFSET_RECOIL_X;
+            recoilYAddress = playerBase + OFFSET_RECOIL_Y;
+        } else {
+            healthAddress = 0;
+            armorAddress = 0;
+            ammoAddress = 0;
+            recoilXAddress = 0;
+            recoilYAddress = 0;
+        }
+    }
 }
 
 void Trainer::ShutdownOverlay() {

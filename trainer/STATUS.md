@@ -6,7 +6,7 @@
 All addresses from `addresses.md` have been integrated into the trainer:
 
 **Static Addresses:**
-- LocalPlayer: `[ac_client.exe + 0x0017E0A8]`
+- LocalPlayer: `[ac_client.exe + 0x17B0B8]`
 - Entity List: `[ac_client.exe + 0x18AC04]`
 - FOV: `[ac_client.exe + 0x18A7CC]`
 - PlayerCount: `[ac_client.exe + 0x18AC0C]`
