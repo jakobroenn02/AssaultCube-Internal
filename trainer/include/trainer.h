@@ -129,7 +129,8 @@ public:
     // Utility
     void UpdatePlayerData();
     void DisplayStatus();
-    
+    void RefreshPlayerAddresses();
+
     // Build feature toggles for UI
     std::vector<FeatureToggle> BuildFeatureToggles();
     PlayerStats GetPlayerStats();
