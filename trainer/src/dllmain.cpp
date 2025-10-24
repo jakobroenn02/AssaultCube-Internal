@@ -5,6 +5,10 @@
 #include <atomic>
 #include "trainer.h"
 #include "memory.h"
+#include "imgui_impl_win32.h"
+
+// Forward declare ImGui's Win32 message handler
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace {
 HMODULE g_moduleHandle = nullptr;
@@ -38,7 +42,17 @@ LRESULT CALLBACK GetMessageHookProc(int code, WPARAM wParam, LPARAM lParam) {
             }
 
             if (g_inputCaptureEnabled.load()) {
-                handled = g_trainerInstance->ProcessMessage(*msg, true) || handled;
+                // Pass messages to ImGui first so it can handle mouse input
+                ImGui_ImplWin32_WndProcHandler(msg->hwnd, msg->message, msg->wParam, msg->lParam);
+                
+                // Then let trainer process it
+                bool trainerHandled = g_trainerInstance->ProcessMessage(*msg, true);
+                
+                // Only block keyboard messages, not mouse messages
+                // This allows the game to still receive mouse input
+                if (trainerHandled) {
+                    handled = true;
+                }
             }
 
             if (handled) {

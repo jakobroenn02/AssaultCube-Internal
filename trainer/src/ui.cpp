@@ -85,6 +85,7 @@ bool UIRenderer::InitializeImGui() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.MouseDrawCursor = true;  // Enable ImGui to draw its own cursor
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
 
@@ -235,9 +236,6 @@ float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) 
         }
         
         const bool isSelected = isHovered;
-
-        ImVec2 minVec(start.x, y);
-        ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
 
         ImU32 bgColor = isSelected ? ColorU32(45, 50, 58) : ColorU32(35, 38, 42);
         ImU32 borderColor = isSelected ? ColorU32(80, 200, 120) : ColorU32(60, 70, 85);
@@ -470,45 +468,17 @@ bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
     requestUnload = false;
 
     if (!menuVisible) {
-        // When menu is hidden, only consume raw input to avoid cursor issues
-        if (msg.message == WM_INPUT) {
-            return true;
-        }
+        // When menu is hidden, don't consume any input
         return false;
     }
 
     bool handled = false;
 
     switch (msg.message) {
-    case WM_INPUT:
-        handled = true;
-        break;
-
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
         bool initialPress = ((msg.lParam & (1 << 30)) == 0);
         switch (msg.wParam) {
-        case VK_UP:
-            if (initialPress) {
-                HandleKeyUp();
-            }
-            handled = true;
-            break;
-        case VK_DOWN:
-            if (initialPress) {
-                HandleKeyDown();
-            }
-            handled = true;
-            break;
-        case VK_RETURN:
-        case VK_SPACE:
-            if (initialPress) {
-                if (HandleKeyEnter()) {
-                    requestUnload = true;
-                }
-            }
-            handled = true;
-            break;
         case VK_ESCAPE:
             if (initialPress) {
                 SetMenuVisible(false);
@@ -520,6 +490,20 @@ bool UIRenderer::ProcessInput(MSG& msg, bool& requestUnload) {
         }
         break;
     }
+    
+    // Don't block mouse input - let the game handle it
+    // ImGui will handle clicks on our UI elements
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
+    case WM_MOUSEMOVE:
+    case WM_MOUSEWHEEL:
+        // Don't consume mouse messages - let them pass through to the game
+        handled = false;
+        break;
 
     default:
         break;
