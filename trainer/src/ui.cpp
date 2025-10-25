@@ -20,6 +20,11 @@ struct Vec4 { float x, y, z, w; };
 
 namespace {
 
+enum class MatrixLayout {
+    ColumnMajor,
+    RowMajor
+};
+
 void MultiplyMatrices(const float a[16], const float b[16], float result[16]) {
     for (int column = 0; column < 4; ++column) {
         for (int row = 0; row < 4; ++row) {
@@ -32,31 +37,45 @@ void MultiplyMatrices(const float a[16], const float b[16], float result[16]) {
     }
 }
 
-// Matrix-based WorldToScreen function
-bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float matrix[16], int width, int height) {
-    auto multiplyColumnMajor = [&](Vec4& clip) {
-        clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
-        clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
-        clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
-        clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
+MatrixLayout DetectMatrixLayout(const float matrix[16]) {
+    auto translationMagnitude = [](float a, float b, float c) {
+        return std::fabs(a) + std::fabs(b) + std::fabs(c);
     };
 
-    auto multiplyRowMajor = [&](Vec4& clip) {
-        clip.x = matrix[0] * pos.x + matrix[1] * pos.y + matrix[2] * pos.z + matrix[3];
-        clip.y = matrix[4] * pos.x + matrix[5] * pos.y + matrix[6] * pos.z + matrix[7];
-        clip.z = matrix[8] * pos.x + matrix[9] * pos.y + matrix[10] * pos.z + matrix[11];
-        clip.w = matrix[12] * pos.x + matrix[13] * pos.y + matrix[14] * pos.z + matrix[15];
-    };
+    float columnTranslation = translationMagnitude(matrix[12], matrix[13], matrix[14]);
+    float rowTranslation = translationMagnitude(matrix[3], matrix[7], matrix[11]);
 
-    Vec4 clip;
-    multiplyColumnMajor(clip);
+    constexpr float kEpsilon = 1e-4f;
+    bool columnHasTranslation = columnTranslation > kEpsilon;
+    bool rowHasTranslation = rowTranslation > kEpsilon;
 
-    auto isValid = [](float w) { return std::fabs(w) > 1e-4f; };
-    if (!isValid(clip.w)) {
-        multiplyRowMajor(clip);
-        if (!isValid(clip.w)) {
-            return false;
+    if (columnHasTranslation == rowHasTranslation) {
+        // If both appear to have translation (or both are essentially zero), prefer column-major
+        // because OpenGL matrices use that layout and our overlay captures them from the GL state.
+        return MatrixLayout::ColumnMajor;
+    }
+
+    return columnHasTranslation ? MatrixLayout::ColumnMajor : MatrixLayout::RowMajor;
+}
+
+void TransposeMatrix(const float matrix[16], float result[16]) {
+    for (int row = 0; row < 4; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            result[column * 4 + row] = matrix[row * 4 + column];
         }
+    }
+}
+
+// Matrix-based WorldToScreen function assuming column-major layout
+bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float matrix[16], int width, int height) {
+    Vec4 clip;
+    clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
+    clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
+    clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
+    clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
+
+    if (std::fabs(clip.w) < 1e-4f) {
+        return false;
     }
 
     if (clip.w <= 0.0f) {
@@ -689,13 +708,58 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     bool glMatricesValid = std::any_of(std::begin(modelView), std::end(modelView), [](float v) { return v != 0.0f; }) &&
                            std::any_of(std::begin(projection), std::end(projection), [](float v) { return v != 0.0f; });
 
-    float viewProjection[16] = {0};
+    float rawMatrix[16] = {0};
 
     if (glMatricesValid) {
-        MultiplyMatrices(projection, modelView, viewProjection);
+        MultiplyMatrices(projection, modelView, rawMatrix);
     } else {
         // Fallback to the memory view matrix if OpenGL state is unavailable
-        trainer.GetViewMatrix(viewProjection);
+        trainer.GetViewMatrix(rawMatrix);
+    }
+
+    float columnMajor[16] = {0};
+    std::copy(std::begin(rawMatrix), std::end(rawMatrix), std::begin(columnMajor));
+
+    float transposed[16] = {0};
+    TransposeMatrix(rawMatrix, transposed);
+
+    Vec3 localPlayerPos;
+    trainer.GetLocalPlayerPosition(localPlayerPos.x, localPlayerPos.y, localPlayerPos.z);
+
+    float columnScreen[2] = {0};
+    bool columnProjected = WorldToScreenMatrix(localPlayerPos, columnScreen, columnMajor, screenWidth, screenHeight);
+
+    float rowScreen[2] = {0};
+    bool rowProjected = WorldToScreenMatrix(localPlayerPos, rowScreen, transposed, screenWidth, screenHeight);
+
+    auto centerDistance = [&](const float screen[2]) {
+        float dx = screen[0] - screenWidth * 0.5f;
+        float dy = screen[1] - screenHeight * 0.5f;
+        return dx * dx + dy * dy;
+    };
+
+    float viewProjection[16] = {0};
+    if (!columnProjected && rowProjected) {
+        std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
+    } else if (columnProjected && rowProjected) {
+        float columnDistance = centerDistance(columnScreen);
+        float rowDistance = centerDistance(rowScreen);
+        if (rowDistance < columnDistance) {
+            std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
+        } else {
+            std::copy(std::begin(columnMajor), std::end(columnMajor), std::begin(viewProjection));
+        }
+    } else if (columnProjected) {
+        std::copy(std::begin(columnMajor), std::end(columnMajor), std::begin(viewProjection));
+    } else if (rowProjected) {
+        std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
+    } else {
+        // Fall back to our best guess based on detected layout
+        if (DetectMatrixLayout(rawMatrix) == MatrixLayout::RowMajor) {
+            std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
+        } else {
+            std::copy(std::begin(columnMajor), std::end(columnMajor), std::begin(viewProjection));
+        }
     }
 
     // Get all players
