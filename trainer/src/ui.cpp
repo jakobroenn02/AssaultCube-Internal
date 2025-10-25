@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <thread>
 #include <algorithm>
+#include <cmath>
 #include <windowsx.h>
 #include <GL/gl.h>  // For OpenGL matrix functions
 
@@ -17,18 +18,41 @@ struct Vec3 { float x, y, z; };
 struct Vec4 { float x, y, z, w; };
 
 // Matrix-based WorldToScreen function
-static bool WorldToScreenMatrix(const Vec3& pos, float screen[2], float matrix[16], int width, int height) {
+static bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float matrix[16], int width, int height) {
+    auto multiplyColumnMajor = [&](Vec4& clip) {
+        clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
+        clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
+        clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
+        clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
+    };
+
+    auto multiplyRowMajor = [&](Vec4& clip) {
+        clip.x = matrix[0] * pos.x + matrix[1] * pos.y + matrix[2] * pos.z + matrix[3];
+        clip.y = matrix[4] * pos.x + matrix[5] * pos.y + matrix[6] * pos.z + matrix[7];
+        clip.z = matrix[8] * pos.x + matrix[9] * pos.y + matrix[10] * pos.z + matrix[11];
+        clip.w = matrix[12] * pos.x + matrix[13] * pos.y + matrix[14] * pos.z + matrix[15];
+    };
+
     Vec4 clip;
-    clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
-    clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
-    clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
-    clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
-    if (clip.w < 0.1f) return false;
+    multiplyColumnMajor(clip);
+
+    auto isValid = [](float w) { return std::fabs(w) > 1e-4f; };
+    if (!isValid(clip.w)) {
+        multiplyRowMajor(clip);
+        if (!isValid(clip.w)) {
+            return false;
+        }
+    }
+
+    if (clip.w <= 0.0f) {
+        return false;
+    }
+
     float ndcX = clip.x / clip.w;
     float ndcY = clip.y / clip.w;
-    // Map NDC to screen
-    screen[0] = (width / 2.0f) * ndcX + (width / 2.0f);
-    screen[1] = -(height / 2.0f) * ndcY + (height / 2.0f);
+
+    screen[0] = (width * 0.5f) * (ndcX + 1.0f);
+    screen[1] = (height * 0.5f) * (1.0f - ndcY);
     return true;
 }
 
