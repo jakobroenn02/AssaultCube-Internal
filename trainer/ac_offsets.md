@@ -376,10 +376,10 @@ Grenade     = 7
 | Offset | Type | Name | Description |
 |--------|------|------|-------------|
 | `+0x61` | `byte` | **Is Shooting** | Set to 1 when firing weapon |
-| `+0xCB` | `int` | **Recoil X Component** | Horizontal recoil offset |
-| `+0xCC` | `int` | **Recoil Y Component** | Vertical recoil offset |
-| `+0xD` | `int` | **Current Yaw (with recoil)** | Yaw angle affected by recoil |
-| `+0xE` | `int` | **Current Pitch (with recoil)** | Pitch angle affected by recoil |
+| `+0x32C` | `int` | **Recoil X Component** | Horizontal recoil offset |
+| `+0x330` | `int` | **Recoil Y Component** | Vertical recoil offset |
+| `+0x34` | `int` | **Current Yaw (with recoil)** | Yaw angle affected by recoil |
+| `+0x38` | `int` | **Current Pitch (with recoil)** | Pitch angle affected by recoil |
 
 ### Recoil Mechanics
 - **Recoil is applied in PlayerMovement function** (`0x004C19C0`)

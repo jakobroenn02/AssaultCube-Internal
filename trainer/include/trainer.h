@@ -48,7 +48,7 @@ private:
     std::vector<BYTE> originalAmmoBytes;
     
     // Static offsets from addresses.md (updated)
-    static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x17B0B8;
+    static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x0017E0A8;  // Fixed - was 0x17B0B8
     static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x187C10;
     static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x17AFE0;
     static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x18EFE4;
@@ -57,8 +57,33 @@ private:
     static constexpr uintptr_t OFFSET_HEALTH = 0xEC;
     static constexpr uintptr_t OFFSET_ARMOR = 0xF0;
     static constexpr uintptr_t OFFSET_TEAM_ID = 0x30C;
-    static constexpr uintptr_t OFFSET_RECOIL_X = 0xCB;
-    static constexpr uintptr_t OFFSET_RECOIL_Y = 0xCC;
+    
+    // Recoil system (CORRECTED - based on disassembly)
+    static constexpr uintptr_t OFFSET_WEAPON_RECOIL_PROPERTY = 0x40;  // Float: weapon recoil calculation multiplier
+    static constexpr uintptr_t OFFSET_RECOIL_X = 0x32C;  // Float: Accumulated recoil X (horizontal)
+    static constexpr uintptr_t OFFSET_RECOIL_Y = 0x330;  // Float: Accumulated recoil Y (vertical)
+    static constexpr uintptr_t OFFSET_MAX_RECOIL = 0x324; // Float: Maximum recoil limit
+    static constexpr uintptr_t OFFSET_IS_SHOOTING = 0x61;  // Byte: 1 when firing
+    
+    // Camera angles (affected by recoil)
+    static constexpr uintptr_t OFFSET_YAW = 0x34;    // Float: Horizontal rotation (camera)
+    static constexpr uintptr_t OFFSET_PITCH = 0x38;  // Float: Vertical rotation (modified by recoil)
+    static constexpr uintptr_t OFFSET_ROLL = 0x3C;   // Float: Roll angle (influenced by recoil)
+    
+    // Movement system (DO NOT MODIFY - controls player input)
+    static constexpr uintptr_t OFFSET_MOVEMENT_DIR1 = 0x74;  // Signed byte: forward/backward
+    static constexpr uintptr_t OFFSET_MOVEMENT_DIR2 = 0x75;  // Signed byte: strafe left/right (A/D keys)
+    static constexpr uintptr_t OFFSET_PLAYER_STATE1 = 0x76;  // Byte: player mode/state
+    static constexpr uintptr_t OFFSET_PLAYER_STATE2 = 0x77;  // Byte: environment state (water/ground)
+    
+    // Position & Velocity
+    static constexpr uintptr_t OFFSET_POS_X_ACTUAL = 0x04;  // Float: Player X position
+    static constexpr uintptr_t OFFSET_POS_Y_ACTUAL = 0x08;  // Float: Player Y position
+    static constexpr uintptr_t OFFSET_POS_Z_ACTUAL = 0x0C;  // Float: Player Z position
+    static constexpr uintptr_t OFFSET_VEL_X = 0x10;  // Float: Velocity X
+    static constexpr uintptr_t OFFSET_VEL_Y = 0x14;  // Float: Velocity Y
+    static constexpr uintptr_t OFFSET_VEL_Z = 0x18;  // Float: Velocity Z
+    static constexpr uintptr_t OFFSET_MOVEMENT_SPEED = 0x44;  // Float: Movement speed multiplier
     
     // Ammo offsets
     static constexpr uintptr_t OFFSET_AR_AMMO = 0x140;

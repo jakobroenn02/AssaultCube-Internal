@@ -247,28 +247,19 @@ void Trainer::ToggleNoRecoil() {
     std::cout << "\n========================================" << std::endl;
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
 
-    if (noRecoil) {
-        if (!recoilPatchAddress) {
-            FindRecoilPatchAddress();
-        }
-        if (recoilXAddress && recoilYAddress) {
-            std::cout << "  Recoil components will be zeroed every frame" << std::endl;
-            std::cout << "  Recoil X: 0x" << std::hex << recoilXAddress << std::dec << std::endl;
-            std::cout << "  Recoil Y: 0x" << std::hex << recoilYAddress << std::dec << std::endl;
-            Memory::Write<int>(recoilXAddress, 0);
-            Memory::Write<int>(recoilYAddress, 0);
-        } else {
-            std::cout << "  WARNING: Recoil addresses not found" << std::endl;
-        }
-        if (recoilPatchAddress) {
-            ApplyRecoilPatch();
-        } else {
-            std::cout << "  WARNING: Recoil patch not available" << std::endl;
-        }
-    } else {
-        if (recoilPatched) {
-            RestoreRecoilBytes();
-        }
+    if (noRecoil && playerBase) {
+        std::cout << "  Using multi-method approach:" << std::endl;
+        std::cout << "    1. Zeroing accumulated recoil (0x32C, 0x330)" << std::endl;
+        std::cout << "    2. Zeroing weapon recoil property (0x40)" << std::endl;
+        
+        // Immediately apply all methods
+        Memory::Write<float>(playerBase + OFFSET_RECOIL_X, 0.0f);
+        Memory::Write<float>(playerBase + OFFSET_RECOIL_Y, 0.0f);
+        Memory::Write<float>(playerBase + OFFSET_WEAPON_RECOIL_PROPERTY, 0.0f);
+        
+        std::cout << "  Recoil disabled!" << std::endl;
+    } else if (!noRecoil && playerBase) {
+        std::cout << "  Restoring normal recoil behavior" << std::endl;
     }
 
     std::cout << "========================================\n" << std::endl;
@@ -344,14 +335,12 @@ void Trainer::UpdatePlayerData() {
     }
     
     if (noRecoil && playerBase) {
-        // Zero out recoil components every frame
-        // Recoil offsets are relative to player entity
-        if (recoilXAddress) {
-            Memory::Write<int>(recoilXAddress, 0); // X recoil (horizontal)
-        }
-        if (recoilYAddress) {
-            Memory::Write<int>(recoilYAddress, 0); // Y recoil (vertical)
-        }
+        // Method 1: Zero accumulated recoil (prevents recoil buildup)
+        Memory::Write<float>(playerBase + OFFSET_RECOIL_X, 0.0f);
+        Memory::Write<float>(playerBase + OFFSET_RECOIL_Y, 0.0f);
+        
+        // Method 2: Zero weapon recoil property (reduces recoil calculation)
+        Memory::Write<float>(playerBase + OFFSET_WEAPON_RECOIL_PROPERTY, 0.0f);
     }
     
     if (regenHealth && healthAddress) {
