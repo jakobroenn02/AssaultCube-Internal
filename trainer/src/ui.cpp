@@ -9,28 +9,75 @@
 #include <cstdio>
 #include <thread>
 #include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <windowsx.h>
-#include <GL/gl.h>  // For OpenGL matrix functions
 
 // Simple vector structs for matrix math
 struct Vec3 { float x, y, z; };
 struct Vec4 { float x, y, z, w; };
 
-// Matrix-based WorldToScreen function
-static bool WorldToScreenMatrix(const Vec3& pos, float screen[2], float matrix[16], int width, int height) {
+namespace {
+
+enum class MatrixLayout {
+    ColumnMajor,
+    RowMajor
+};
+
+MatrixLayout DetectMatrixLayout(const float matrix[16]) {
+    auto translationMagnitude = [](float a, float b, float c) {
+        return std::fabs(a) + std::fabs(b) + std::fabs(c);
+    };
+
+    float columnTranslation = translationMagnitude(matrix[12], matrix[13], matrix[14]);
+    float rowTranslation = translationMagnitude(matrix[3], matrix[7], matrix[11]);
+
+    constexpr float kEpsilon = 1e-4f;
+    bool columnHasTranslation = columnTranslation > kEpsilon;
+    bool rowHasTranslation = rowTranslation > kEpsilon;
+
+    if (columnHasTranslation == rowHasTranslation) {
+        // If both appear to have translation (or both are essentially zero), prefer column-major
+        // because OpenGL matrices use that layout and our overlay captures them from the GL state.
+        return MatrixLayout::ColumnMajor;
+    }
+
+    return columnHasTranslation ? MatrixLayout::ColumnMajor : MatrixLayout::RowMajor;
+}
+
+void TransposeMatrix(const float matrix[16], float result[16]) {
+    for (int row = 0; row < 4; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            result[column * 4 + row] = matrix[row * 4 + column];
+        }
+    }
+}
+
+// Matrix-based WorldToScreen function assuming column-major layout
+bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float matrix[16], int width, int height) {
     Vec4 clip;
     clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
     clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
     clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
     clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
-    if (clip.w < 0.1f) return false;
+
+    if (std::fabs(clip.w) < 1e-4f) {
+        return false;
+    }
+
+    if (clip.w <= 0.0f) {
+        return false;
+    }
+
     float ndcX = clip.x / clip.w;
     float ndcY = clip.y / clip.w;
-    // Map NDC to screen
-    screen[0] = (width / 2.0f) * ndcX + (width / 2.0f);
-    screen[1] = -(height / 2.0f) * ndcY + (height / 2.0f);
+
+    screen[0] = (width * 0.5f) * (ndcX + 1.0f);
+    screen[1] = (height * 0.5f) * (1.0f - ndcY);
     return true;
 }
+
+} // namespace
 
 // Window class name for overlay
 static const char* OVERLAY_CLASS_NAME = "ACTrainerOverlay";
@@ -638,11 +685,32 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
-    
-    // Get view matrix from game
-    float viewMatrix[16] = {0};
-    trainer.GetViewMatrix(viewMatrix); // You must implement this in Trainer
-    
+
+    float rawMatrix[16] = {0};
+    trainer.GetViewMatrix(rawMatrix);
+
+    static MatrixLayout cachedLayout = MatrixLayout::ColumnMajor;
+    static bool layoutInitialized = false;
+
+    MatrixLayout currentLayout = DetectMatrixLayout(rawMatrix);
+
+    if (!layoutInitialized) {
+        cachedLayout = currentLayout;
+        layoutInitialized = true;
+    }
+
+    // Allow recovery if the cached layout appears to be wrong (e.g. view matrix changed on map load)
+    if (currentLayout != cachedLayout) {
+        cachedLayout = currentLayout;
+    }
+
+    float viewProjection[16] = {0};
+    if (cachedLayout == MatrixLayout::RowMajor) {
+        TransposeMatrix(rawMatrix, viewProjection);
+    } else {
+        std::copy(std::begin(rawMatrix), std::end(rawMatrix), std::begin(viewProjection));
+    }
+
     // Get all players
     std::vector<uintptr_t> players;
     if (!trainer.GetPlayerList(players)) return;
@@ -679,7 +747,7 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         // Project 3D position to screen using matrix
         Vec3 pos = {x, y, z};
         float screenPos[2];
-        if (!WorldToScreenMatrix(pos, screenPos, viewMatrix, screenWidth, screenHeight)) {
+        if (!WorldToScreenMatrix(pos, screenPos, viewProjection, screenWidth, screenHeight)) {
             offScreenPlayers++;
             continue;  // Player is off screen or behind camera
             // Draw a visible debug marker to confirm ESP rendering
