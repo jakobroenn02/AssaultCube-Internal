@@ -703,7 +703,7 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         // Project 3D position to screen using matrix
         Vec3 pos = {x, y, z};
         float screenPos[2];
-        if (!WorldToScreenMatrix(pos, screenPos, viewMatrix, screenWidth, screenHeight)) {
+        if (!WorldToScreenMatrix(pos, screenPos, viewProjection, screenWidth, screenHeight)) {
             offScreenPlayers++;
             continue;  // Player is off screen or behind camera
             // Draw a visible debug marker to confirm ESP rendering
