@@ -8,72 +8,38 @@
 #include "imgui_impl_opengl3.h"
 #include <cstdio>
 #include <thread>
-#include <algorithm>
 #include <cmath>
-#include <iterator>
 #include <windowsx.h>
 
 // Simple vector structs for matrix math
 struct Vec3 { float x, y, z; };
-struct Vec4 { float x, y, z, w; };
 
 namespace {
 
-enum class MatrixLayout {
-    ColumnMajor,
-    RowMajor
+struct ViewMatrix {
+    float data[16];
 };
 
-MatrixLayout DetectMatrixLayout(const float matrix[16]) {
-    auto translationMagnitude = [](float a, float b, float c) {
-        return std::fabs(a) + std::fabs(b) + std::fabs(c);
-    };
+// AssaultCube exposes a row-major view-projection matrix in memory. Treating the
+// data as DirectX-style rows matches the approach used by external overlays such as
+// GuidedHacking's AssaultCube ESP examples and keeps our projections aligned with
+// the in-game renderer.
+bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const ViewMatrix& matrix, int width, int height) {
+    const float* m = matrix.data;
 
-    float columnTranslation = translationMagnitude(matrix[12], matrix[13], matrix[14]);
-    float rowTranslation = translationMagnitude(matrix[3], matrix[7], matrix[11]);
+    float clipX = pos.x * m[0] + pos.y * m[4] + pos.z * m[8] + m[12];
+    float clipY = pos.x * m[1] + pos.y * m[5] + pos.z * m[9] + m[13];
+    float clipW = pos.x * m[3] + pos.y * m[7] + pos.z * m[11] + m[15];
 
-    constexpr float kEpsilon = 1e-4f;
-    bool columnHasTranslation = columnTranslation > kEpsilon;
-    bool rowHasTranslation = rowTranslation > kEpsilon;
-
-    if (columnHasTranslation == rowHasTranslation) {
-        // If both appear to have translation (or both are essentially zero), prefer column-major
-        // because OpenGL matrices use that layout and our overlay captures them from the GL state.
-        return MatrixLayout::ColumnMajor;
-    }
-
-    return columnHasTranslation ? MatrixLayout::ColumnMajor : MatrixLayout::RowMajor;
-}
-
-void TransposeMatrix(const float matrix[16], float result[16]) {
-    for (int row = 0; row < 4; ++row) {
-        for (int column = 0; column < 4; ++column) {
-            result[column * 4 + row] = matrix[row * 4 + column];
-        }
-    }
-}
-
-// Matrix-based WorldToScreen function assuming column-major layout
-bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float matrix[16], int width, int height) {
-    Vec4 clip;
-    clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
-    clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
-    clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
-    clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
-
-    if (std::fabs(clip.w) < 1e-4f) {
+    if (clipW < 0.1f) {
         return false;
     }
 
-    if (clip.w <= 0.0f) {
-        return false;
-    }
+    float ndcX = clipX / clipW;
+    float ndcY = clipY / clipW;
 
-    float ndcX = clip.x / clip.w;
-    float ndcY = clip.y / clip.w;
-
-    screen[0] = (width * 0.5f) * (ndcX + 1.0f);
-    screen[1] = (height * 0.5f) * (1.0f - ndcY);
+    screen[0] = (width * 0.5f) + (ndcX * width * 0.5f);
+    screen[1] = (height * 0.5f) - (ndcY * height * 0.5f);
     return true;
 }
 
@@ -686,29 +652,19 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
 
-    float rawMatrix[16] = {0};
-    trainer.GetViewMatrix(rawMatrix);
+    ViewMatrix viewMatrix = {};
+    trainer.GetViewMatrix(viewMatrix.data);
 
-    static MatrixLayout cachedLayout = MatrixLayout::ColumnMajor;
-    static bool layoutInitialized = false;
-
-    MatrixLayout currentLayout = DetectMatrixLayout(rawMatrix);
-
-    if (!layoutInitialized) {
-        cachedLayout = currentLayout;
-        layoutInitialized = true;
+    // Guard against an uninitialized matrix (all zeros) which would fail the projection test.
+    bool hasValidMatrix = false;
+    for (float value : viewMatrix.data) {
+        if (value != 0.0f) {
+            hasValidMatrix = true;
+            break;
+        }
     }
-
-    // Allow recovery if the cached layout appears to be wrong (e.g. view matrix changed on map load)
-    if (currentLayout != cachedLayout) {
-        cachedLayout = currentLayout;
-    }
-
-    float viewProjection[16] = {0};
-    if (cachedLayout == MatrixLayout::RowMajor) {
-        TransposeMatrix(rawMatrix, viewProjection);
-    } else {
-        std::copy(std::begin(rawMatrix), std::end(rawMatrix), std::begin(viewProjection));
+    if (!hasValidMatrix) {
+        return;
     }
 
     // Get all players
