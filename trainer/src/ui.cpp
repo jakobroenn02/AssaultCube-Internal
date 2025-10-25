@@ -10,6 +10,7 @@
 #include <thread>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <windowsx.h>
 #include <GL/gl.h>  // For OpenGL matrix functions
 
@@ -17,8 +18,22 @@
 struct Vec3 { float x, y, z; };
 struct Vec4 { float x, y, z, w; };
 
+namespace {
+
+void MultiplyMatrices(const float a[16], const float b[16], float result[16]) {
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 4; ++row) {
+            result[column * 4 + row] =
+                a[0 * 4 + row] * b[column * 4 + 0] +
+                a[1 * 4 + row] * b[column * 4 + 1] +
+                a[2 * 4 + row] * b[column * 4 + 2] +
+                a[3 * 4 + row] * b[column * 4 + 3];
+        }
+    }
+}
+
 // Matrix-based WorldToScreen function
-static bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float matrix[16], int width, int height) {
+bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float matrix[16], int width, int height) {
     auto multiplyColumnMajor = [&](Vec4& clip) {
         clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
         clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
@@ -55,6 +70,8 @@ static bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const float ma
     screen[1] = (height * 0.5f) * (1.0f - ndcY);
     return true;
 }
+
+} // namespace
 
 // Window class name for overlay
 static const char* OVERLAY_CLASS_NAME = "ACTrainerOverlay";
@@ -663,10 +680,24 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
     
-    // Get view matrix from game
-    float viewMatrix[16] = {0};
-    trainer.GetViewMatrix(viewMatrix); // You must implement this in Trainer
-    
+    // Query the active OpenGL matrices so we use the exact camera transform the game renders with
+    float modelView[16] = {0};
+    float projection[16] = {0};
+    glGetFloatv(GL_MODELVIEW_MATRIX, modelView);
+    glGetFloatv(GL_PROJECTION_MATRIX, projection);
+
+    bool glMatricesValid = std::any_of(std::begin(modelView), std::end(modelView), [](float v) { return v != 0.0f; }) &&
+                           std::any_of(std::begin(projection), std::end(projection), [](float v) { return v != 0.0f; });
+
+    float viewProjection[16] = {0};
+
+    if (glMatricesValid) {
+        MultiplyMatrices(projection, modelView, viewProjection);
+    } else {
+        // Fallback to the memory view matrix if OpenGL state is unavailable
+        trainer.GetViewMatrix(viewProjection);
+    }
+
     // Get all players
     std::vector<uintptr_t> players;
     if (!trainer.GetPlayerList(players)) return;
@@ -703,7 +734,7 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         // Project 3D position to screen using matrix
         Vec3 pos = {x, y, z};
         float screenPos[2];
-        if (!WorldToScreenMatrix(pos, screenPos, viewMatrix, screenWidth, screenHeight)) {
+        if (!WorldToScreenMatrix(pos, screenPos, viewProjection, screenWidth, screenHeight)) {
             offScreenPlayers++;
             continue;  // Player is off screen or behind camera
             // Draw a visible debug marker to confirm ESP rendering
