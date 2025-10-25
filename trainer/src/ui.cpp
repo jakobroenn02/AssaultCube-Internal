@@ -10,6 +10,27 @@
 #include <thread>
 #include <algorithm>
 #include <windowsx.h>
+#include <GL/gl.h>  // For OpenGL matrix functions
+
+// Simple vector structs for matrix math
+struct Vec3 { float x, y, z; };
+struct Vec4 { float x, y, z, w; };
+
+// Matrix-based WorldToScreen function
+static bool WorldToScreenMatrix(const Vec3& pos, float screen[2], float matrix[16], int width, int height) {
+    Vec4 clip;
+    clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
+    clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
+    clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
+    clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
+    if (clip.w < 0.1f) return false;
+    float ndcX = clip.x / clip.w;
+    float ndcY = clip.y / clip.w;
+    // Map NDC to screen
+    screen[0] = (width / 2.0f) * ndcX + (width / 2.0f);
+    screen[1] = -(height / 2.0f) * ndcY + (height / 2.0f);
+    return true;
+}
 
 // Window class name for overlay
 static const char* OVERLAY_CLASS_NAME = "ACTrainerOverlay";
@@ -521,6 +542,11 @@ void UIRenderer::Render(Trainer& trainer) {
     ImDrawList* testDrawList = ImGui::GetForegroundDrawList();
     testDrawList->AddRectFilled(ImVec2(10, 10), ImVec2(110, 60), IM_COL32(255, 0, 0, 255));
     testDrawList->AddText(ImVec2(15, 15), IM_COL32(255, 255, 255, 255), "HOOK ACTIVE");
+    
+    // Render ESP if enabled (before menu so it's behind)
+    if (trainer.IsESPEnabled()) {
+        RenderESP(trainer);
+    }
 
     if (menuVisible) {
         featureToggles = trainer.BuildFeatureToggles();
@@ -603,4 +629,104 @@ void UIRenderer::Shutdown() {
     textFont = nullptr;
     smallFont = nullptr;
     featureToggles.clear();
+}
+
+void UIRenderer::RenderESP(Trainer& trainer) {
+    // Get screen dimensions
+    RECT clientRect;
+    if (!GetClientRect(gameWindow, &clientRect)) return;
+    
+    int screenWidth = clientRect.right;
+    int screenHeight = clientRect.bottom;
+    
+    // Get view matrix from game
+    float viewMatrix[16] = {0};
+    trainer.GetViewMatrix(viewMatrix); // You must implement this in Trainer
+    
+    // Get all players
+    std::vector<uintptr_t> players;
+    if (!trainer.GetPlayerList(players)) return;
+    
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    
+    // Draw ESP info in top-right corner
+    char infoText[128];
+    snprintf(infoText, sizeof(infoText), "ESP ACTIVE: %d players", (int)players.size());
+    drawList->AddText(ImVec2(screenWidth - 180.0f, 80.0f), IM_COL32(0, 255, 0, 255), infoText);
+
+    
+    int validPlayers = 0;
+    int offScreenPlayers = 0;
+    
+    // Draw each player with 3D world-to-screen projection
+    for (uintptr_t playerPtr : players) {
+        bool valid = trainer.IsPlayerValid(playerPtr);
+        bool alive = trainer.IsPlayerAlive(playerPtr);
+        int team = trainer.GetPlayerTeam(playerPtr);
+        float x, y, z;
+        trainer.GetPlayerPosition(playerPtr, x, y, z);
+        char name[64] = {0};
+        trainer.GetPlayerName(playerPtr, name, sizeof(name));
+
+        // Debug: show entity info for all entities
+        char entityDbg[256];
+        snprintf(entityDbg, sizeof(entityDbg), "Entity %s: valid=%d alive=%d team=%d pos=(%.1f,%.1f,%.1f)", name, valid, alive, team, x, y, z);
+        drawList->AddText(ImVec2(20, 120 + 16 * validPlayers), IM_COL32(255,128,0,255), entityDbg);
+
+        if (!valid || !alive) continue;
+        validPlayers++;
+
+        // Project 3D position to screen using matrix
+        Vec3 pos = {x, y, z};
+        float screenPos[2];
+        if (!WorldToScreenMatrix(pos, screenPos, viewMatrix, screenWidth, screenHeight)) {
+            offScreenPlayers++;
+            continue;  // Player is off screen or behind camera
+            // Draw a visible debug marker to confirm ESP rendering
+            drawList->AddRectFilled(ImVec2(50, 50), ImVec2(200, 100), IM_COL32(0, 255, 255, 255));
+            drawList->AddText(ImVec2(60, 60), IM_COL32(255, 0, 0, 255), "ESP DEBUG MARKER");
+        }
+        float screenX = screenPos[0];
+        float screenY = screenPos[1];
+        // Debug output for position and projection
+        char dbg[256];
+        snprintf(dbg, sizeof(dbg), "Player %s: World(%.1f,%.1f,%.1f) -> Screen(%.1f,%.1f)", name, x, y, z, screenX, screenY);
+        drawList->AddText(ImVec2(20, 140 + 16 * validPlayers), IM_COL32(255,255,0,255), dbg);
+        // Choose color based on team (red for enemies, green for teammates)
+        ImU32 boxColor = IM_COL32(255, 50, 50, 200);  // Red for enemies
+        ImU32 textColor = IM_COL32(255, 255, 255, 255);  // White text
+        
+        // Draw box around player (feet at screenY, head above)
+        float boxWidth = 40.0f;
+        float boxHeight = 60.0f;
+        ImVec2 topLeft(screenX - boxWidth/2, screenY - boxHeight);
+        ImVec2 bottomRight(screenX + boxWidth/2, screenY);
+        
+        // Draw filled background with transparency
+        drawList->AddRectFilled(topLeft, bottomRight, IM_COL32(0, 0, 0, 100));
+        // Draw box outline
+        drawList->AddRect(topLeft, bottomRight, boxColor, 0.0f, 0, 2.0f);
+        
+        // Draw player name above box
+        if (name[0] != 0) {
+            ImVec2 textSize = ImGui::CalcTextSize(name);
+            ImVec2 namePos(screenX - textSize.x/2, screenY - boxHeight - 15.0f);
+            
+            // Draw text background
+            drawList->AddRectFilled(
+                ImVec2(namePos.x - 2, namePos.y - 2),
+                ImVec2(namePos.x + textSize.x + 2, namePos.y + textSize.y + 2),
+                IM_COL32(0, 0, 0, 150)
+            );
+            drawList->AddText(namePos, textColor, name);
+        }
+        
+        // Draw distance indicator below box
+        // ...existing code...
+    }
+    
+    // Draw debug info
+    char debugText[128];
+    snprintf(debugText, sizeof(debugText), "Valid: %d | OffScreen: %d", validPlayers, offScreenPlayers);
+    drawList->AddText(ImVec2(screenWidth - 180.0f, 100.0f), IM_COL32(200, 200, 200, 255), debugText);
 }

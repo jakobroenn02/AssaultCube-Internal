@@ -15,6 +15,7 @@ Trainer::Trainer(uintptr_t base)
       infiniteAmmo(false),
       noRecoil(false),
       regenHealth(false),
+      esp(false),
       recoilPatchAddress(0),
       recoilPatched(false),
       playerBase(0),
@@ -284,6 +285,147 @@ void Trainer::SetAmmo(int value) {
     }
 }
 
+void Trainer::ToggleESP() {
+    esp = !esp;
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "ESP / Wallhack: " << (esp ? "ON" : "OFF") << std::endl;
+    
+    if (esp) {
+        std::cout << "  Drawing player boxes and info overlay" << std::endl;
+        std::cout << "  Green = Teammates | Red = Enemies" << std::endl;
+        
+        // Test player list reading
+        std::vector<uintptr_t> testPlayers;
+        if (GetPlayerList(testPlayers)) {
+            std::cout << "  Found " << testPlayers.size() << " players in game" << std::endl;
+        } else {
+            std::cout << "  WARNING: No players found! Check if you're in a multiplayer game." << std::endl;
+        }
+    }
+    
+    std::cout << "========================================\n" << std::endl;
+    std::cout.flush();
+}
+
+// ESP Helper Functions
+int Trainer::GetPlayerCount() {
+    uintptr_t playerCountAddr = moduleBase + OFFSET_PLAYER_COUNT;
+    int count = Memory::Read<int>(playerCountAddr);
+    
+    // Debug output on first call
+    static bool firstCall = true;
+    if (firstCall && esp) {
+        std::cout << "[ESP Debug] Player count address: 0x" << std::hex << playerCountAddr << std::dec << std::endl;
+        std::cout << "[ESP Debug] Player count: " << count << std::endl;
+        firstCall = false;
+    }
+    
+    return count;
+}
+
+bool Trainer::GetPlayerList(std::vector<uintptr_t>& players) {
+    players.clear();
+    
+    int count = GetPlayerCount();
+    if (count <= 0 || count > 32) {
+        if (esp) {
+            std::cout << "[ESP Debug] Invalid player count: " << count << std::endl;
+        }
+        return false;  // Sanity check
+    }
+    
+    uintptr_t entityListAddr = moduleBase + OFFSET_ENTITY_LIST;
+    uintptr_t entityList = Memory::Read<uintptr_t>(entityListAddr);
+    
+    // Debug output
+    static bool firstListCall = true;
+    if (firstListCall && esp) {
+        std::cout << "[ESP Debug] Entity list address: 0x" << std::hex << entityListAddr << std::dec << std::endl;
+        std::cout << "[ESP Debug] Entity list pointer: 0x" << std::hex << entityList << std::dec << std::endl;
+        firstListCall = false;
+    }
+    
+    if (!entityList) {
+        if (esp) {
+            std::cout << "[ESP Debug] Entity list pointer is null!" << std::endl;
+        }
+        return false;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        uintptr_t playerPtr = Memory::Read<uintptr_t>(entityList + (i * 4));
+        if (playerPtr && playerPtr != playerBase) {  // Skip local player
+            players.push_back(playerPtr);
+        }
+    }
+    
+    return !players.empty();
+}
+
+bool Trainer::IsPlayerValid(uintptr_t playerPtr) {
+    if (!playerPtr || playerPtr == playerBase) return false;
+    
+    // Basic validity check - read a value and see if it's reasonable
+    float x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
+    return (x > -10000.0f && x < 10000.0f);  // Reasonable world coordinate
+}
+
+bool Trainer::IsPlayerAlive(uintptr_t playerPtr) {
+    if (!playerPtr) return false;
+    
+    // Check if dead flag (offset 0x76) is 0 (alive)
+    byte isDead = Memory::Read<byte>(playerPtr + OFFSET_PLAYER_STATE1);
+    return (isDead == 0);
+}
+
+int Trainer::GetPlayerTeam(uintptr_t playerPtr) {
+    if (!playerPtr) return -1;
+    return Memory::Read<int>(playerPtr + OFFSET_TEAM_ID);
+}
+
+void Trainer::GetPlayerPosition(uintptr_t playerPtr, float& x, float& y, float& z) {
+    if (!playerPtr) {
+        x = y = z = 0.0f;
+        return;
+    }
+    
+    x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
+    y = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
+    z = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+}
+
+void Trainer::GetPlayerName(uintptr_t playerPtr, char* name, size_t maxLen) {
+    if (!playerPtr || !name || maxLen == 0) return;
+    
+    // Read player name from offset 0x205 (260 byte string)
+    for (size_t i = 0; i < maxLen - 1 && i < 260; i++) {
+        name[i] = Memory::Read<char>(playerPtr + OFFSET_PLAYER_NAME + i);
+        if (name[i] == 0) break;
+    }
+    name[maxLen - 1] = 0;  // Ensure null termination
+}
+
+void Trainer::GetLocalPlayerPosition(float& x, float& y, float& z) {
+    if (!playerBase) {
+        x = y = z = 0.0f;
+        return;
+    }
+    
+    x = Memory::Read<float>(playerBase + OFFSET_POS_X_ACTUAL);
+    y = Memory::Read<float>(playerBase + OFFSET_POS_Y_ACTUAL);
+    z = Memory::Read<float>(playerBase + OFFSET_POS_Z_ACTUAL);
+}
+
+void Trainer::GetLocalPlayerAngles(float& yaw, float& pitch) {
+    if (!playerBase) {
+        yaw = pitch = 0.0f;
+        return;
+    }
+    
+    yaw = Memory::Read<float>(playerBase + OFFSET_YAW);
+    pitch = Memory::Read<float>(playerBase + OFFSET_PITCH);
+}
+
 bool Trainer::FindPlayerBase() {
     // We now read this directly in Initialize() from moduleBase + OFFSET_LOCALPLAYER
     // This function is kept for compatibility but isn't needed anymore
@@ -391,6 +533,14 @@ std::vector<FeatureToggle> Trainer::BuildFeatureToggles() {
     regenToggle.onToggle = [this]() { this->ToggleRegenHealth(); };
     regenToggle.isActive = [this]() { return this->regenHealth.load(); };
     toggles.push_back(regenToggle);
+    
+    // ESP / Wallhack toggle
+    FeatureToggle espToggle;
+    espToggle.name = "ESP / Wallhack";
+    espToggle.description = "See players through walls";
+    espToggle.onToggle = [this]() { this->ToggleESP(); };
+    espToggle.isActive = [this]() { return this->esp.load(); };
+    toggles.push_back(espToggle);
     
     return toggles;
 }

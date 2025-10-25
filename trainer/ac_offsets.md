@@ -1,9 +1,16 @@
 # AssaultCube Game Offsets Reference
 
-## 🎯 Base Pointers
+## 🎯 Base Addresses (Static Pointers - VERIFIED)
 
-| Name | Address | Type | Description |
-|---
+| Address | Type | Name | Description |
+|---------|------|------|-------------|
+| `0x0058AC00` | `int*` | **Local Player Pointer** | Points to the local player entity structure |
+| `0x0058AC04` | `int**` | **Entity List Array** | Array of pointers to all player entities |
+| `0x0058AC0C` | `int` | **Entity Count** | Number of entities in the entity list |
+| `0x0057E0A8` | `int*` | **Spectator/Referenced Player** | Points to currently spectated or referenced player |
+| `0x0058ABF8` | `int` | **GameMode** | Current game mode (0=DM, 4=TDM, etc.) |
+| `0x0059086C` | `int*` | **SpawnPoints** | Array of spawn point structures |
+| `0x0056BC90` | `int` | **CurrentSpawnIndex** | Current spawn point index |
 
 ## 🔬 Pattern Signatures (AOB - Array of Bytes)
 
@@ -57,14 +64,14 @@ Example address: 0x0058AC0C
 ## 🎯 Trainer Feature Checklist
 
 - [x] **No Recoil** - Zero out +0xCB and +0xCC
-- [x] **ESP / Wallhack** - Read player array, positions, and team
-- [x] **Aimbot** - Calculate angles, write to +0x34 and +0xE
-- [x] **Speed Hack** - Modify +0x11 multiplier
-- [x] **Teleport** - Write to +0x4, +0x8, +0xC positions
-- [x] **Fly Mode** - Set player state (+0x77) to 3 (swimming)
-- [x] **Infinite Jump** - Set +0x5F flag
-- [ ] **God Mode** - Hook damage function (needs more analysis)
-- [ ] **Infinite Ammo** - Freeze ammo values (needs +0x1D4 verification)
+- [] **ESP / Wallhack** - Read player array, positions, and team
+- [] **Aimbot** - Calculate angles, write to +0x34 and +0xE
+- [] **Speed Hack** - Modify +0x11 multiplier
+- [] **Teleport** - Write to +0x4, +0x8, +0xC positions
+- [] **Fly Mode** - Set player state (+0x77) to 3 (swimming)
+- [] **Infinite Jump** - Set +0x5F flag
+- [x] **God Mode** - Hook damage function (needs more analysis)
+- [x] **Infinite Ammo** - Freeze ammo values (needs +0x1D4 verification)
 - [ ] **Rapid Fire** - Modify fire rate in weapon object
 - [ ] **No Spread** - Hook projectile spawn at 0x004CC560
 
@@ -119,11 +126,52 @@ if (*(int**)0x0058AC00 != nullptr) { ... } // Unnecessary re-read
 
 ---
 
-## 🏃 Player Entity Structure Offsets
+## 🏃 Entity Structure Offsets (VERIFIED)
+
+*Once you have a pointer to an entity (from the entity list at 0x0058AC04), you can access these offsets:*
+
+### Position & Velocity
+
+| Offset | Type | Name | Description |
+|--------|------|------|-------------|
+| `+0x04` | `float` | **Position X** | Player X coordinate in world space |
+| `+0x08` | `float` | **Position Y** | Player Y coordinate in world space |
+| `+0x0C` | `float` | **Position Z** | Player Z coordinate in world space |
+| `+0x10` | `float` | **Velocity X** | Movement velocity X component |
+| `+0x14` | `float` | **Velocity Y** | Movement velocity Y component |
+| `+0x18` | `float` | **Velocity Z** | Movement velocity Z component |
+
+### Camera/View Angles
+
+| Offset | Type | Name | Description |
+|--------|------|------|-------------|
+| `+0x34` | `float` | **Yaw** | Horizontal rotation (0-360 degrees) |
+| `+0x38` | `float` | **Pitch** | Vertical rotation (-90 to 90 degrees) |
+| `+0x3C` | `float` | **Roll** | Roll angle (camera tilt) |
+
+### Player Info
+
+| Offset | Type | Name | Description |
+|--------|------|------|-------------|
+| `+0x30C` | `int` | **Team ID** | Player's team (0 or 1 in team modes) |
+| `+0x61` | `byte` | **Is Shooting** | 1 if currently firing, 0 otherwise |
+| `+0x76` | `byte` | **Player State** | State flags (alive, spectating, etc.) |
+| `+0x77` | `byte` | **Environment State** | Water/ground state |
+
+### Health & Armor
+
+| Offset | Type | Name | Description |
+|--------|------|------|-------------|
+| `+0xEC` | `int` | **Health** | Current health points |
+| `+0xF0` | `int` | **Armor** | Current armor points |
+
+---
+
+## 🏃 Player Entity Structure Offsets (LEGACY - NEEDS VERIFICATION)
 
 *Base: LocalPlayer pointer (`0x0058AC00`)*
 
-### Position & Movement
+### Position & Movement (OLD)
 | Offset | Type | Name | Description |
 |--------|------|------|-------------|
 | `+0x4` | `float` | **X Position** | Player X coordinate |

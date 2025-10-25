@@ -68,6 +68,9 @@ public:
 
     // Render the main UI panel with interactive toggles
     void Render(Trainer& trainer);
+    
+    // ESP rendering
+    void RenderESP(Trainer& trainer);
 
     bool IsImGuiInitialized() const { return imguiInitialized; }
 

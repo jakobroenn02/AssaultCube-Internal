@@ -5,13 +5,22 @@
 #include <cstdint>
 #include <vector>
 #include <atomic>
-
+#include "memory.h"
 // Forward declare UIRenderer to avoid circular dependency
 class UIRenderer;
 struct FeatureToggle;
 struct PlayerStats;
 
 class Trainer {
+    // ...existing code...
+public:
+    // Reads the view matrix from game memory
+    void GetViewMatrix(float* outMatrix) {
+        uintptr_t matrixAddr = moduleBase + OFFSET_VIEW_MATRIX;
+        for (int i = 0; i < 16; ++i) {
+            outMatrix[i] = Memory::Read<float>(matrixAddr + i * sizeof(float));
+        }
+    }
 private:
     uintptr_t moduleBase;
     bool isRunning;
@@ -23,6 +32,7 @@ private:
     std::atomic<bool> infiniteAmmo;
     std::atomic<bool> noRecoil;
     std::atomic<bool> regenHealth;
+    std::atomic<bool> esp;  // Wallhack/ESP feature
     
     // Recoil patch data
     uintptr_t recoilPatchAddress;
@@ -49,9 +59,9 @@ private:
     
     // Static offsets from addresses.md (updated)
     static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x0017E0A8;  // Fixed - was 0x17B0B8
-    static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x187C10;
+    static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x0018AC04;   // Absolute: 0x0058AC04
     static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x17AFE0;
-    static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x18EFE4;
+    static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x0018AC0C;  // Absolute: 0x0058AC0C
     
     // Player offsets
     static constexpr uintptr_t OFFSET_HEALTH = 0xEC;
@@ -134,6 +144,7 @@ public:
     void ToggleInfiniteAmmo();
     void ToggleNoRecoil();
     void ToggleRegenHealth();
+    void ToggleESP();
     void InstantRefillHealth();
     void RequestUnload();
     
@@ -159,6 +170,17 @@ public:
     // Build feature toggles for UI
     std::vector<FeatureToggle> BuildFeatureToggles();
     PlayerStats GetPlayerStats();
+    
+    // ESP / Wallhack functions
+    bool GetPlayerList(std::vector<uintptr_t>& players);
+    int GetPlayerCount();
+    bool IsPlayerValid(uintptr_t playerPtr);
+    bool IsPlayerAlive(uintptr_t playerPtr);
+    int GetPlayerTeam(uintptr_t playerPtr);
+    void GetPlayerPosition(uintptr_t playerPtr, float& x, float& y, float& z);
+    void GetPlayerName(uintptr_t playerPtr, char* name, size_t maxLen);
+    void GetLocalPlayerPosition(float& x, float& y, float& z);
+    void GetLocalPlayerAngles(float& yaw, float& pitch);
 
     // Accessors
     UIRenderer* GetUIRenderer() const { return uiRenderer; }
@@ -166,6 +188,7 @@ public:
     void SetMessagePumpInputEnabled(bool enabled);
     bool IsMessagePumpInputEnabled() const { return messagePumpInputEnabled.load(); }
     void SetOverlayMenuVisible(bool visible);
+    bool IsESPEnabled() const { return esp.load(); }
 };
 
 #endif // TRAINER_H
