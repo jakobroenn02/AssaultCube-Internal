@@ -29,6 +29,6 @@ Makefile
 # IDE
 .vscode/
 .idea/
-
+.claude/
 # Logs
 *.log

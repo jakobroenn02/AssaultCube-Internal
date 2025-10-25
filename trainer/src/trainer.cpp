@@ -16,6 +16,10 @@ Trainer::Trainer(uintptr_t base)
       noRecoil(false),
       regenHealth(false),
       esp(false),
+      aimbot(false),
+      aimbotSmoothness(3.0f),
+      aimbotFOV(45.0f),
+      aimbotUseFOV(false),
       recoilPatchAddress(0),
       recoilPatched(false),
       playerBase(0),
@@ -131,10 +135,15 @@ void Trainer::Run() {
         if (!IsMessagePumpInputEnabled()) {
             ProcessOverlayInput();
         }
-        
+
         // Update player data if features are active
         if (godMode || infiniteAmmo || noRecoil || regenHealth) {
             UpdatePlayerData();
+        }
+
+        // Update aimbot if active
+        if (aimbot) {
+            UpdateAimbot();
         }
 
         // Sleep to reduce CPU usage
@@ -289,11 +298,11 @@ void Trainer::ToggleESP() {
     esp = !esp;
     std::cout << "\n========================================" << std::endl;
     std::cout << "ESP / Wallhack: " << (esp ? "ON" : "OFF") << std::endl;
-    
+
     if (esp) {
         std::cout << "  Drawing player boxes and info overlay" << std::endl;
         std::cout << "  Green = Teammates | Red = Enemies" << std::endl;
-        
+
         // Test player list reading
         std::vector<uintptr_t> testPlayers;
         if (GetPlayerList(testPlayers)) {
@@ -302,7 +311,25 @@ void Trainer::ToggleESP() {
             std::cout << "  WARNING: No players found! Check if you're in a multiplayer game." << std::endl;
         }
     }
-    
+
+    std::cout << "========================================\n" << std::endl;
+    std::cout.flush();
+}
+
+void Trainer::ToggleAimbot() {
+    aimbot = !aimbot;
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "Aimbot: " << (aimbot ? "ON" : "OFF") << std::endl;
+
+    if (aimbot) {
+        std::cout << "  Mode: " << (aimbotUseFOV ? "Closest to Crosshair" : "Closest Distance") << std::endl;
+        std::cout << "  Smoothness: " << aimbotSmoothness.load() << "x" << std::endl;
+        if (aimbotUseFOV) {
+            std::cout << "  FOV: " << aimbotFOV.load() << " degrees" << std::endl;
+        }
+        std::cout << "  Tip: Open menu to adjust settings" << std::endl;
+    }
+
     std::cout << "========================================\n" << std::endl;
     std::cout.flush();
 }
@@ -541,7 +568,15 @@ std::vector<FeatureToggle> Trainer::BuildFeatureToggles() {
     espToggle.onToggle = [this]() { this->ToggleESP(); };
     espToggle.isActive = [this]() { return this->esp.load(); };
     toggles.push_back(espToggle);
-    
+
+    // Aimbot toggle
+    FeatureToggle aimbotToggle;
+    aimbotToggle.name = "Aimbot";
+    aimbotToggle.description = "Auto-aim at nearest enemy";
+    aimbotToggle.onToggle = [this]() { this->ToggleAimbot(); };
+    aimbotToggle.isActive = [this]() { return this->aimbot.load(); };
+    toggles.push_back(aimbotToggle);
+
     return toggles;
 }
 
@@ -668,4 +703,254 @@ void Trainer::ShutdownOverlay() {
         delete uiRenderer;
         uiRenderer = nullptr;
     }
+}
+
+// ========== AIMBOT IMPLEMENTATION ==========
+// Educational: This demonstrates how aimbots work in 3D games
+
+// Find the closest enemy player to aim at
+uintptr_t Trainer::FindClosestEnemy(float& outDistance) {
+    if (!playerBase) {
+        outDistance = -1.0f;
+        return 0;
+    }
+
+    // Get local player position
+    float localX, localY, localZ;
+    GetLocalPlayerPosition(localX, localY, localZ);
+
+    // Get local player team
+    int localTeam = Memory::Read<int>(playerBase + OFFSET_TEAM_ID);
+
+    // Get all players
+    std::vector<uintptr_t> players;
+    if (!GetPlayerList(players)) {
+        outDistance = -1.0f;
+        return 0;
+    }
+
+    uintptr_t closestEnemy = 0;
+    float closestDistance = 99999.0f;
+
+    for (uintptr_t playerPtr : players) {
+        // Skip invalid or dead players
+        if (!IsPlayerValid(playerPtr) || !IsPlayerAlive(playerPtr)) {
+            continue;
+        }
+
+        // Skip teammates (only aim at enemies)
+        int playerTeam = GetPlayerTeam(playerPtr);
+        if (playerTeam == localTeam) {
+            continue;
+        }
+
+        // Get enemy position
+        float enemyX, enemyY, enemyZ;
+        GetPlayerPosition(playerPtr, enemyX, enemyY, enemyZ);
+
+        // Calculate 3D distance
+        float dx = enemyX - localX;
+        float dy = enemyY - localY;
+        float dz = enemyZ - localZ;
+        float distance = sqrt(dx * dx + dy * dy + dz * dz);
+
+        // Track closest enemy
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            closestEnemy = playerPtr;
+        }
+    }
+
+    outDistance = closestDistance;
+    return closestEnemy;
+}
+
+// Calculate yaw and pitch angles to aim from position 'from' to position 'to'
+void Trainer::CalculateAngles(const float* from, const float* to, float& yaw, float& pitch) {
+    // Calculate delta vector
+    float dx = to[0] - from[0];
+    float dy = to[1] - from[1];
+    float dz = to[2] - from[2];
+
+    // Calculate yaw (horizontal angle)
+    // In AssaultCube: yaw is rotation around Z axis
+    yaw = atan2(dy, dx) * (180.0f / 3.14159265f);
+
+    // Calculate pitch (vertical angle)
+    // pitch is angle up/down
+    float horizontalDist = sqrt(dx * dx + dy * dy);
+    pitch = -atan2(dz, horizontalDist) * (180.0f / 3.14159265f);
+}
+
+// Calculate FOV (field of view) angle to a target
+// Returns the angle in degrees between crosshair and target
+float Trainer::CalculateFOVToTarget(uintptr_t targetPtr) {
+    if (!playerBase || !targetPtr) return 999.0f;
+
+    // Get local player position and angles
+    float localX, localY, localZ;
+    GetLocalPlayerPosition(localX, localY, localZ);
+    localZ += 10.0f;  // Head height
+
+    float currentYaw, currentPitch;
+    GetLocalPlayerAngles(currentYaw, currentPitch);
+
+    // Get target position
+    float targetX, targetY, targetZ;
+    GetPlayerPosition(targetPtr, targetX, targetY, targetZ);
+    targetZ += 10.0f;  // Target head
+
+    // Calculate angles to target
+    float localPos[3] = { localX, localY, localZ };
+    float targetPos[3] = { targetX, targetY, targetZ };
+    float targetYaw, targetPitch;
+    CalculateAngles(localPos, targetPos, targetYaw, targetPitch);
+
+    // Calculate angular distance (FOV)
+    float deltaYaw = targetYaw - currentYaw;
+    float deltaPitch = targetPitch - currentPitch;
+
+    // Normalize yaw
+    while (deltaYaw > 180.0f) deltaYaw -= 360.0f;
+    while (deltaYaw < -180.0f) deltaYaw += 360.0f;
+
+    // Calculate total FOV distance (Pythagorean theorem in angle space)
+    float fov = sqrt(deltaYaw * deltaYaw + deltaPitch * deltaPitch);
+    return fov;
+}
+
+// Find enemy closest to crosshair (within FOV cone)
+uintptr_t Trainer::FindClosestEnemyToCrosshair(float& outFOV) {
+    if (!playerBase) {
+        outFOV = -1.0f;
+        return 0;
+    }
+
+    // Get local player team
+    int localTeam = Memory::Read<int>(playerBase + OFFSET_TEAM_ID);
+
+    // Get all players
+    std::vector<uintptr_t> players;
+    if (!GetPlayerList(players)) {
+        outFOV = -1.0f;
+        return 0;
+    }
+
+    uintptr_t closestEnemy = 0;
+    float closestFOV = 999.0f;
+    float maxFOV = aimbotFOV.load();  // Only consider enemies within this FOV
+
+    for (uintptr_t playerPtr : players) {
+        // Skip invalid or dead players
+        if (!IsPlayerValid(playerPtr) || !IsPlayerAlive(playerPtr)) {
+            continue;
+        }
+
+        // Skip teammates
+        int playerTeam = GetPlayerTeam(playerPtr);
+        if (playerTeam == localTeam) {
+            continue;
+        }
+
+        // Calculate FOV to this target
+        float fov = CalculateFOVToTarget(playerPtr);
+
+        // Only consider targets within max FOV
+        if (fov > maxFOV) {
+            continue;
+        }
+
+        // Track closest to crosshair
+        if (fov < closestFOV) {
+            closestFOV = fov;
+            closestEnemy = playerPtr;
+        }
+    }
+
+    outFOV = closestFOV;
+    return closestEnemy;
+}
+
+// Smoothly adjust aim toward target angles
+void Trainer::SmoothAim(float targetYaw, float targetPitch) {
+    if (!playerBase) return;
+
+    // Get current angles
+    float currentYaw = Memory::Read<float>(playerBase + OFFSET_YAW);
+    float currentPitch = Memory::Read<float>(playerBase + OFFSET_PITCH);
+
+    // Calculate angle difference
+    float deltaYaw = targetYaw - currentYaw;
+    float deltaPitch = targetPitch - currentPitch;
+
+    // Normalize yaw to -180..180 range
+    while (deltaYaw > 180.0f) deltaYaw -= 360.0f;
+    while (deltaYaw < -180.0f) deltaYaw += 360.0f;
+
+    // Apply smoothing (higher smoothness = slower aim)
+    // smoothness of 1.0 = instant snap, 5.0 = very smooth
+    float smoothness = aimbotSmoothness.load();
+    float newYaw = currentYaw + (deltaYaw / smoothness);
+    float newPitch = currentPitch + (deltaPitch / smoothness);
+
+    // Clamp pitch to valid range (-90 to 90 degrees)
+    if (newPitch > 90.0f) newPitch = 90.0f;
+    if (newPitch < -90.0f) newPitch = -90.0f;
+
+    // Write new angles
+    Memory::Write<float>(playerBase + OFFSET_YAW, newYaw);
+    Memory::Write<float>(playerBase + OFFSET_PITCH, newPitch);
+}
+
+// Main aimbot update - called every frame when aimbot is active
+void Trainer::UpdateAimbot() {
+    RefreshPlayerAddresses();
+
+    if (!playerBase) return;
+
+    uintptr_t target = 0;
+    bool useFOV = aimbotUseFOV.load();
+
+    if (useFOV) {
+        // FOV-based targeting: aim at enemy closest to crosshair
+        float fov = 0.0f;
+        target = FindClosestEnemyToCrosshair(fov);
+
+        if (!target || fov < 0.0f) {
+            return;  // No target found within FOV
+        }
+    } else {
+        // Distance-based targeting: aim at closest enemy
+        float distance = 0.0f;
+        target = FindClosestEnemy(distance);
+
+        if (!target || distance < 0.0f) {
+            return;  // No valid target found
+        }
+
+        // Don't aim at targets too far away
+        const float maxAimbotDistance = 500.0f;
+        if (distance > maxAimbotDistance) {
+            return;
+        }
+    }
+
+    // Get local player head position (aim from head, not feet)
+    float localX, localY, localZ;
+    GetLocalPlayerPosition(localX, localY, localZ);
+    localZ += 10.0f;  // Add approximate head height offset
+
+    // Get target head position
+    float targetX, targetY, targetZ;
+    GetPlayerPosition(target, targetX, targetY, targetZ);
+    targetZ += 10.0f;  // Aim at enemy head
+
+    // Calculate required angles
+    float localPos[3] = { localX, localY, localZ };
+    float targetPos[3] = { targetX, targetY, targetZ };
+    float targetYaw, targetPitch;
+    CalculateAngles(localPos, targetPos, targetYaw, targetPitch);
+
+    // Smooth aim toward target
+    SmoothAim(targetYaw, targetPitch);
 }

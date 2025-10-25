@@ -54,9 +54,10 @@ private:
     bool InitializeImGui();
     void UpdateMenuState();
     void UpdateNavigation(Trainer& trainer);
-    void DrawMenu(const PlayerStats& stats);
+    void DrawMenu(const PlayerStats& stats, Trainer& trainer);
     float DrawFeatureToggles(struct ImDrawList* drawList, const struct ImVec2& start);
     float DrawPlayerStats(struct ImDrawList* drawList, const struct ImVec2& start, const PlayerStats& stats);
+    float DrawAimbotSettings(struct ImDrawList* drawList, const struct ImVec2& start, Trainer& trainer);
     float DrawUnloadButton(struct ImDrawList* drawList, const struct ImVec2& start, bool& requestUnload);
 
 public:

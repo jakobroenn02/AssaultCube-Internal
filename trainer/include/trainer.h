@@ -33,6 +33,10 @@ private:
     std::atomic<bool> noRecoil;
     std::atomic<bool> regenHealth;
     std::atomic<bool> esp;  // Wallhack/ESP feature
+    std::atomic<bool> aimbot;  // Aimbot feature
+    std::atomic<float> aimbotSmoothness;  // Aimbot smoothness (1.0 = instant, higher = smoother)
+    std::atomic<float> aimbotFOV;  // FOV cone for aimbot (degrees)
+    std::atomic<bool> aimbotUseFOV;  // True = aim at closest to crosshair, False = closest distance
     
     // Recoil patch data
     uintptr_t recoilPatchAddress;
@@ -145,6 +149,7 @@ public:
     void ToggleNoRecoil();
     void ToggleRegenHealth();
     void ToggleESP();
+    void ToggleAimbot();
     void InstantRefillHealth();
     void RequestUnload();
     
@@ -182,6 +187,22 @@ public:
     void GetLocalPlayerPosition(float& x, float& y, float& z);
     void GetLocalPlayerAngles(float& yaw, float& pitch);
 
+    // Aimbot helper functions
+    uintptr_t FindClosestEnemy(float& outDistance);
+    uintptr_t FindClosestEnemyToCrosshair(float& outFOV);
+    void CalculateAngles(const float* from, const float* to, float& yaw, float& pitch);
+    float CalculateFOVToTarget(uintptr_t targetPtr);
+    void SmoothAim(float targetYaw, float targetPitch);
+    void UpdateAimbot();
+
+    // Aimbot settings accessors
+    float GetAimbotSmoothness() const { return aimbotSmoothness.load(); }
+    void SetAimbotSmoothness(float value) { aimbotSmoothness.store(value); }
+    float GetAimbotFOV() const { return aimbotFOV.load(); }
+    void SetAimbotFOV(float value) { aimbotFOV.store(value); }
+    bool GetAimbotUseFOV() const { return aimbotUseFOV.load(); }
+    void SetAimbotUseFOV(bool value) { aimbotUseFOV.store(value); }
+
     // Accessors
     UIRenderer* GetUIRenderer() const { return uiRenderer; }
     HWND GetGameWindowHandle() const { return gameWindowHandle; }
@@ -189,6 +210,7 @@ public:
     bool IsMessagePumpInputEnabled() const { return messagePumpInputEnabled.load(); }
     void SetOverlayMenuVisible(bool visible);
     bool IsESPEnabled() const { return esp.load(); }
+    bool IsAimbotEnabled() const { return aimbot.load(); }
 };
 
 #endif // TRAINER_H
