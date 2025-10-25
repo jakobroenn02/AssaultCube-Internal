@@ -8,29 +8,44 @@
 #include "imgui_impl_opengl3.h"
 #include <cstdio>
 #include <thread>
-#include <algorithm>
+#include <cmath>
 #include <windowsx.h>
-#include <GL/gl.h>  // For OpenGL matrix functions
 
 // Simple vector structs for matrix math
 struct Vec3 { float x, y, z; };
-struct Vec4 { float x, y, z, w; };
 
-// Matrix-based WorldToScreen function
-static bool WorldToScreenMatrix(const Vec3& pos, float screen[2], float matrix[16], int width, int height) {
-    Vec4 clip;
-    clip.x = matrix[0] * pos.x + matrix[4] * pos.y + matrix[8] * pos.z + matrix[12];
-    clip.y = matrix[1] * pos.x + matrix[5] * pos.y + matrix[9] * pos.z + matrix[13];
-    clip.z = matrix[2] * pos.x + matrix[6] * pos.y + matrix[10] * pos.z + matrix[14];
-    clip.w = matrix[3] * pos.x + matrix[7] * pos.y + matrix[11] * pos.z + matrix[15];
-    if (clip.w < 0.1f) return false;
-    float ndcX = clip.x / clip.w;
-    float ndcY = clip.y / clip.w;
-    // Map NDC to screen
-    screen[0] = (width / 2.0f) * ndcX + (width / 2.0f);
-    screen[1] = -(height / 2.0f) * ndcY + (height / 2.0f);
+namespace {
+
+struct ViewMatrix {
+    float data[16];
+
+    float operator()(int row, int column) const {
+        return data[row * 4 + column];
+    }
+};
+
+// AssaultCube exposes a row-major view-projection matrix in memory. Treating the
+// data as DirectX-style rows matches the approach used by external overlays such as
+// GuidedHacking's AssaultCube ESP examples and keeps our projections aligned with
+// the in-game renderer.
+bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const ViewMatrix& matrix, int width, int height) {
+    float clipX = matrix(0, 0) * pos.x + matrix(0, 1) * pos.y + matrix(0, 2) * pos.z + matrix(0, 3);
+    float clipY = matrix(1, 0) * pos.x + matrix(1, 1) * pos.y + matrix(1, 2) * pos.z + matrix(1, 3);
+    float clipW = matrix(3, 0) * pos.x + matrix(3, 1) * pos.y + matrix(3, 2) * pos.z + matrix(3, 3);
+
+    if (std::fabs(clipW) < 1e-4f || clipW <= 0.0f) {
+        return false;
+    }
+
+    float ndcX = clipX / clipW;
+    float ndcY = clipY / clipW;
+
+    screen[0] = (width * 0.5f) + (ndcX * width * 0.5f);
+    screen[1] = (height * 0.5f) - (ndcY * height * 0.5f);
     return true;
 }
+
+} // namespace
 
 // Window class name for overlay
 static const char* OVERLAY_CLASS_NAME = "ACTrainerOverlay";
@@ -638,11 +653,22 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
-    
-    // Get view matrix from game
-    float viewMatrix[16] = {0};
-    trainer.GetViewMatrix(viewMatrix); // You must implement this in Trainer
-    
+
+    ViewMatrix viewMatrix = {};
+    trainer.GetViewMatrix(viewMatrix.data);
+
+    // Guard against an uninitialized matrix (all zeros) which would fail the projection test.
+    bool hasValidMatrix = false;
+    for (float value : viewMatrix.data) {
+        if (value != 0.0f) {
+            hasValidMatrix = true;
+            break;
+        }
+    }
+    if (!hasValidMatrix) {
+        return;
+    }
+
     // Get all players
     std::vector<uintptr_t> players;
     if (!trainer.GetPlayerList(players)) return;
