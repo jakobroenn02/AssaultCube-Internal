@@ -12,7 +12,6 @@
 #include <cmath>
 #include <iterator>
 #include <windowsx.h>
-#include <GL/gl.h>  // For OpenGL matrix functions
 
 // Simple vector structs for matrix math
 struct Vec3 { float x, y, z; };
@@ -24,18 +23,6 @@ enum class MatrixLayout {
     ColumnMajor,
     RowMajor
 };
-
-void MultiplyMatrices(const float a[16], const float b[16], float result[16]) {
-    for (int column = 0; column < 4; ++column) {
-        for (int row = 0; row < 4; ++row) {
-            result[column * 4 + row] =
-                a[0 * 4 + row] * b[column * 4 + 0] +
-                a[1 * 4 + row] * b[column * 4 + 1] +
-                a[2 * 4 + row] * b[column * 4 + 2] +
-                a[3 * 4 + row] * b[column * 4 + 3];
-        }
-    }
-}
 
 MatrixLayout DetectMatrixLayout(const float matrix[16]) {
     auto translationMagnitude = [](float a, float b, float c) {
@@ -698,68 +685,30 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
-    
-    // Query the active OpenGL matrices so we use the exact camera transform the game renders with
-    float modelView[16] = {0};
-    float projection[16] = {0};
-    glGetFloatv(GL_MODELVIEW_MATRIX, modelView);
-    glGetFloatv(GL_PROJECTION_MATRIX, projection);
-
-    bool glMatricesValid = std::any_of(std::begin(modelView), std::end(modelView), [](float v) { return v != 0.0f; }) &&
-                           std::any_of(std::begin(projection), std::end(projection), [](float v) { return v != 0.0f; });
 
     float rawMatrix[16] = {0};
+    trainer.GetViewMatrix(rawMatrix);
 
-    if (glMatricesValid) {
-        MultiplyMatrices(projection, modelView, rawMatrix);
-    } else {
-        // Fallback to the memory view matrix if OpenGL state is unavailable
-        trainer.GetViewMatrix(rawMatrix);
+    static MatrixLayout cachedLayout = MatrixLayout::ColumnMajor;
+    static bool layoutInitialized = false;
+
+    MatrixLayout currentLayout = DetectMatrixLayout(rawMatrix);
+
+    if (!layoutInitialized) {
+        cachedLayout = currentLayout;
+        layoutInitialized = true;
     }
 
-    float columnMajor[16] = {0};
-    std::copy(std::begin(rawMatrix), std::end(rawMatrix), std::begin(columnMajor));
-
-    float transposed[16] = {0};
-    TransposeMatrix(rawMatrix, transposed);
-
-    Vec3 localPlayerPos;
-    trainer.GetLocalPlayerPosition(localPlayerPos.x, localPlayerPos.y, localPlayerPos.z);
-
-    float columnScreen[2] = {0};
-    bool columnProjected = WorldToScreenMatrix(localPlayerPos, columnScreen, columnMajor, screenWidth, screenHeight);
-
-    float rowScreen[2] = {0};
-    bool rowProjected = WorldToScreenMatrix(localPlayerPos, rowScreen, transposed, screenWidth, screenHeight);
-
-    auto centerDistance = [&](const float screen[2]) {
-        float dx = screen[0] - screenWidth * 0.5f;
-        float dy = screen[1] - screenHeight * 0.5f;
-        return dx * dx + dy * dy;
-    };
+    // Allow recovery if the cached layout appears to be wrong (e.g. view matrix changed on map load)
+    if (currentLayout != cachedLayout) {
+        cachedLayout = currentLayout;
+    }
 
     float viewProjection[16] = {0};
-    if (!columnProjected && rowProjected) {
-        std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
-    } else if (columnProjected && rowProjected) {
-        float columnDistance = centerDistance(columnScreen);
-        float rowDistance = centerDistance(rowScreen);
-        if (rowDistance < columnDistance) {
-            std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
-        } else {
-            std::copy(std::begin(columnMajor), std::end(columnMajor), std::begin(viewProjection));
-        }
-    } else if (columnProjected) {
-        std::copy(std::begin(columnMajor), std::end(columnMajor), std::begin(viewProjection));
-    } else if (rowProjected) {
-        std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
+    if (cachedLayout == MatrixLayout::RowMajor) {
+        TransposeMatrix(rawMatrix, viewProjection);
     } else {
-        // Fall back to our best guess based on detected layout
-        if (DetectMatrixLayout(rawMatrix) == MatrixLayout::RowMajor) {
-            std::copy(std::begin(transposed), std::end(transposed), std::begin(viewProjection));
-        } else {
-            std::copy(std::begin(columnMajor), std::end(columnMajor), std::begin(viewProjection));
-        }
+        std::copy(std::begin(rawMatrix), std::end(rawMatrix), std::begin(viewProjection));
     }
 
     // Get all players
