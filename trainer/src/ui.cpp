@@ -3,6 +3,7 @@
 #include "trainer.h"
 #include "memory.h"
 #include "render_utils.h"
+#include "gl_hook.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -15,6 +16,7 @@ using RenderUtils::Distance3D;
 using RenderUtils::Draw2DBox;
 using RenderUtils::Draw3DBox;
 using RenderUtils::DrawSnapline;
+using RenderUtils::TransformContext;
 using RenderUtils::Vec3;
 using RenderUtils::WorldToScreen;
 
@@ -53,7 +55,7 @@ constexpr float kButtonSpacing = 10.0f;
 constexpr float kIndicatorSize = 16.0f;
 constexpr float kCornerRadius = 10.0f;
 } // namespace
-
+//ui render class constructor, sets all values to its standard intialization.
 UIRenderer::UIRenderer()
     : gameWindow(nullptr),
       imguiInitialized(false),
@@ -73,11 +75,11 @@ UIRenderer::UIRenderer()
       smallFont(nullptr) {
     savedClipRect = {0, 0, 0, 0};
 }
-
+// Destructor
 UIRenderer::~UIRenderer() {
     Shutdown();
 }
-
+// initializes the ui render to the target window
 bool UIRenderer::Initialize(HWND targetWindow) {
     if (!targetWindow) {
         return false;
@@ -89,7 +91,7 @@ bool UIRenderer::Initialize(HWND targetWindow) {
     featureToggles.clear();
     return true;
 }
-
+//initializes imgui
 bool UIRenderer::InitializeImGui() {
     if (imguiInitialized) {
         return true;
@@ -161,6 +163,7 @@ void UIRenderer::UpdateMenuState() {
         upHeld = downHeld = enterHeld = false;
     }
 }
+
 
 void UIRenderer::UpdateNavigation(Trainer& trainer) {
     if (!menuVisible) {
@@ -953,28 +956,82 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
 
+    TransformContext transform{};
+    float viewMatrixF[16] = {0.0f};
+    bool hasCapturedView = GetCapturedViewMatrix(viewMatrixF);
+    if (!hasCapturedView) {
+        trainer.GetViewMatrix(viewMatrixF);
+    }
+
+    bool viewValid = false;
+    for (float value : viewMatrixF) {
+        if (value != 0.0f) {
+            viewValid = true;
+            break;
+        }
+    }
+
+    if (!viewValid) {
+        for (int i = 0; i < 16; ++i) {
+            viewMatrixF[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+        }
+    }
+
+    for (int i = 0; i < 16; ++i) {
+        transform.modelview[i] = static_cast<double>(viewMatrixF[i]);
+    }
+
+    float projectionMatrixF[16] = {0.0f};
+    trainer.GetProjectionMatrix(projectionMatrixF);
+    bool projectionValid = false;
+    for (float value : projectionMatrixF) {
+        if (value != 0.0f) {
+            projectionValid = true;
+            break;
+        }
+    }
+
+    if (hasCapturedView && projectionValid) {
+        for (int i = 0; i < 16; ++i) {
+            transform.projection[i] = static_cast<double>(projectionMatrixF[i]);
+        }
+    } else {
+        for (int i = 0; i < 16; ++i) {
+            transform.projection[i] = (i % 5 == 0) ? 1.0 : 0.0;
+        }
+    }
+
+    transform.viewport[0] = 0;
+    transform.viewport[1] = 0;
+    transform.viewport[2] = screenWidth;
+    transform.viewport[3] = screenHeight;
+
     // ===== DEBUG PANEL - TOP LEFT (Still using ImGui for text) =====
     int debugY = 10;
     const int debugLineHeight = 16;
 
-    // ESP Status
-    drawList->AddRectFilled(ImVec2(5, debugY - 2), ImVec2(400, debugY + 130), IM_COL32(0, 0, 0, 180));
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 255, 255), "=== ESP DEBUG (Live GL Matrices) ===");
+    drawList->AddRectFilled(ImVec2(5, debugY - 2), ImVec2(400, debugY + 150), IM_COL32(0, 0, 0, 180));
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 255, 255), "=== ESP DEBUG (Camera Matrices) ===");
     debugY += debugLineHeight;
 
-    // NEW: Read matrices directly from OpenGL for debug
-    GLdouble modelview[16];
-    glGetDoublev(GL_MODELVIEW_MATRIX, modelview);
+    const char* viewSource = hasCapturedView ? "View source: glLoadMatrixf hook" : "View source: memory fallback";
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(220, 220, 255, 255), viewSource);
+    debugY += debugLineHeight;
 
-    // Matrix debug - show key elements
     char matrixDebug[256];
-    snprintf(matrixDebug, sizeof(matrixDebug), "ModelView: [0-3]=%.2f,%.2f,%.2f,%.2f [12-15]=%.2f,%.2f,%.2f,%.2f",
-             (float)modelview[0], (float)modelview[1], (float)modelview[2], (float)modelview[3],
-             (float)modelview[12], (float)modelview[13], (float)modelview[14], (float)modelview[15]);
+    snprintf(matrixDebug, sizeof(matrixDebug), "ModelView[0,5,10,15]=%.2f %.2f %.2f %.2f",
+             static_cast<float>(transform.modelview[0]),
+             static_cast<float>(transform.modelview[5]),
+             static_cast<float>(transform.modelview[10]),
+             static_cast<float>(transform.modelview[15]));
     drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
     debugY += debugLineHeight;
 
-    // Show screen dimensions
+    snprintf(matrixDebug, sizeof(matrixDebug), "Projection valid: %s",
+             (hasCapturedView && projectionValid) ? "YES" : "Identity fallback");
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
+    debugY += debugLineHeight;
+
     char screenInfo[128];
     snprintf(screenInfo, sizeof(screenInfo), "Screen: %dx%d (from RECT)", screenWidth, screenHeight);
     drawList->AddText(ImVec2(10, debugY), IM_COL32(150, 150, 255, 255), screenInfo);
@@ -1037,8 +1094,8 @@ void UIRenderer::RenderESP(Trainer& trainer) {
 
         // Check if on screen (for debug) - NEW: Uses OpenGL's live matrices
         float screenFeet[2], screenHead[2];
-        bool feetOnScreen = WorldToScreen(feetPos, screenFeet);
-        bool headOnScreen = WorldToScreen(headPos, screenHead);
+        bool feetOnScreen = WorldToScreen(feetPos, screenFeet, transform);
+        bool headOnScreen = WorldToScreen(headPos, screenHead, transform);
 
         // Skip if both feet and head are offscreen
         if (!feetOnScreen && !headOnScreen) {
@@ -1088,13 +1145,13 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         // ===== DRAW ESP ELEMENTS USING OPENGL (NEW: Uses live matrices!) =====
 
         // Option 1: Draw 2D box (fast and simple)
-        Draw2DBox(feetPos, headPos, r, g, b);
+        Draw2DBox(feetPos, headPos, r, g, b, transform);
 
         // Option 2: Draw 3D box (more detailed, uncomment to use)
-        // Draw3DBox(feetPos, headPos, r, g, b);
+        // Draw3DBox(feetPos, headPos, r, g, b, transform);
 
         // Option 3: Draw snapline from screen center to enemy
-        DrawSnapline(feetPos, r, g, b);
+        DrawSnapline(feetPos, r, g, b, transform);
 
         // Draw player name above box using ImGui (for now - could be replaced with OpenGL text rendering)
         if (name[0] != 0 && headOnScreen) {

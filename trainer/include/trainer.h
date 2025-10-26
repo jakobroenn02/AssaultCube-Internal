@@ -12,7 +12,7 @@ struct FeatureToggle;
 struct PlayerStats;
 
 class Trainer {
-    // ...existing code...
+   
 public:
     // Reads the view matrix from game memory
     void GetViewMatrix(float* outMatrix);
@@ -66,7 +66,7 @@ private:
     static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x0017E0A8;  // Absolute: 0x0057E0A8 - Also the camera pointer!
     static constexpr uintptr_t OFFSET_CAMERA_PTR = 0x0017E0A8;   // Absolute: 0x0057E0A8 - Camera/view pointer (same as local player)
     static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x0018AC04;   // Absolute: 0x0058AC04
-    static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x0017E010;   // Absolute: 0x0057E010 - GL_MODELVIEW_MATRIX (row-major: rotation + translation)
+    static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x0017E010;   // Absolute: 0x0057E010 - GL_MODELVIEW_MATRIX (column-major: rotation + translation)
     static constexpr uintptr_t OFFSET_PROJECTION_MATRIX = 0x0017E0B0;  // Absolute: 0x0057E0B0 - GL_PROJECTION_MATRIX (64 bytes)
     static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x0018AC0C;  // Absolute: 0x0058AC0C
     

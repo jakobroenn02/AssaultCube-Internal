@@ -94,18 +94,13 @@ void DrawFilledBoxGL(float x, float y, float width, float height, float r, float
 
 namespace RenderUtils {
 
-bool WorldToScreen(const Vec3& world, float screen[2]) {
-    GLdouble modelview[16];
-    GLdouble projection[16];
-    GLint viewport[4];
+bool WorldToScreen(const Vec3& world, float screen[2], const TransformContext& context) {
+    GLdouble screenX;
+    GLdouble screenY;
+    GLdouble screenZ;
 
-    glGetDoublev(GL_MODELVIEW_MATRIX, modelview);
-    glGetDoublev(GL_PROJECTION_MATRIX, projection);
-    glGetIntegerv(GL_VIEWPORT, viewport);
-
-    GLdouble screenX, screenY, screenZ;
     bool result = ManualGLUProject(world.x, world.y, world.z,
-                                   modelview, projection, viewport,
+                                   context.modelview, context.projection, context.viewport,
                                    &screenX, &screenY, &screenZ);
 
     if (!result || screenZ < 0.0 || screenZ > 1.0) {
@@ -113,26 +108,24 @@ bool WorldToScreen(const Vec3& world, float screen[2]) {
     }
 
     screen[0] = static_cast<float>(screenX);
-    screen[1] = static_cast<float>(viewport[3] - screenY);
+    screen[1] = static_cast<float>(context.viewport[3] - screenY);
 
     return true;
 }
 
-void Draw2DBox(const Vec3& feet, const Vec3& head, float r, float g, float b) {
+void Draw2DBox(const Vec3& feet, const Vec3& head, float r, float g, float b, const TransformContext& context) {
     float screenFeet[2];
     float screenHead[2];
 
-    if (!WorldToScreen(feet, screenFeet)) {
+    if (!WorldToScreen(feet, screenFeet, context)) {
         return;
     }
-    if (!WorldToScreen(head, screenHead)) {
+    if (!WorldToScreen(head, screenHead, context)) {
         return;
     }
 
-    GLint viewport[4];
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    int screenWidth = viewport[2];
-    int screenHeight = viewport[3];
+    int screenWidth = context.viewport[2];
+    int screenHeight = context.viewport[3];
 
     if (screenFeet[0] < -100 || screenFeet[0] > screenWidth + 100 ||
         screenFeet[1] < -100 || screenFeet[1] > screenHeight + 100 ||
@@ -158,21 +151,19 @@ void Draw2DBox(const Vec3& feet, const Vec3& head, float r, float g, float b) {
     DrawBoxGL(x, y, width, height, r, g, b, 1.0f);
 }
 
-void DrawSnapline(const Vec3& targetPos, float r, float g, float b) {
+void DrawSnapline(const Vec3& targetPos, float r, float g, float b, const TransformContext& context) {
     float screenPos[2];
-    if (!WorldToScreen(targetPos, screenPos)) {
+    if (!WorldToScreen(targetPos, screenPos, context)) {
         return;
     }
 
-    GLint viewport[4];
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    float centerX = viewport[2] / 2.0f;
-    float centerY = viewport[3] / 2.0f;
+    float centerX = context.viewport[2] / 2.0f;
+    float centerY = context.viewport[3] / 2.0f;
 
     DrawLineGL(centerX, centerY, screenPos[0], screenPos[1], r, g, b, 0.7f);
 }
 
-void Draw3DBox(const Vec3& feet, const Vec3& head, float r, float g, float b) {
+void Draw3DBox(const Vec3& feet, const Vec3& head, float r, float g, float b, const TransformContext& context) {
     float boxWidth = 0.4f;
     Vec3 corners[8];
 
@@ -188,7 +179,7 @@ void Draw3DBox(const Vec3& feet, const Vec3& head, float r, float g, float b) {
 
     float screenCorners[8][2];
     for (int i = 0; i < 8; ++i) {
-        if (!WorldToScreen(corners[i], screenCorners[i])) {
+        if (!WorldToScreen(corners[i], screenCorners[i], context)) {
             return;
         }
     }
@@ -225,4 +216,3 @@ float Distance3D(const Vec3& a, const Vec3& b) {
 }
 
 }  // namespace RenderUtils
-
