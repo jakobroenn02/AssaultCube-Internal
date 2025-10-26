@@ -776,15 +776,15 @@ void Trainer::GetProjectionMatrix(float* outMatrix) {
     }
 }
 
-// Multiply two 4x4 matrices: result = a * b
+// Multiply two 4x4 matrices (column-major storage): result = a * b
 static void MultiplyMatrix(const float* a, const float* b, float* result) {
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
-            result[row * 4 + col] =
-                a[row * 4 + 0] * b[0 * 4 + col] +
-                a[row * 4 + 1] * b[1 * 4 + col] +
-                a[row * 4 + 2] * b[2 * 4 + col] +
-                a[row * 4 + 3] * b[3 * 4 + col];
+            result[col * 4 + row] =
+                a[0 * 4 + row] * b[col * 4 + 0] +
+                a[1 * 4 + row] * b[col * 4 + 1] +
+                a[2 * 4 + row] * b[col * 4 + 2] +
+                a[3 * 4 + row] * b[col * 4 + 3];
         }
     }
 }

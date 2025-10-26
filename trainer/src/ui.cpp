@@ -24,7 +24,7 @@ namespace {
 // ============================================================================
 
 // Manual implementation of gluProject (to avoid glu32.lib dependency)
-// IMPORTANT: AssaultCube stores matrices in ROW-MAJOR format despite using OpenGL!
+// IMPORTANT: OpenGL returns matrices in COLUMN-MAJOR order via glGet*, so multiply accordingly.
 bool ManualGLUProject(double objX, double objY, double objZ,
                       const double* model, const double* proj, const int* viewport,
                       double* winX, double* winY, double* winZ) {
@@ -32,18 +32,18 @@ bool ManualGLUProject(double objX, double objY, double objZ,
     double in[4] = { objX, objY, objZ, 1.0 };
     double out[4];
 
-    // Multiply by modelview matrix - ROW-MAJOR interpretation
-    // Memory layout: [row0: m0 m1 m2 m3] [row1: m4 m5 m6 m7] [row2: m8 m9 m10 m11] [row3: m12 m13 m14 m15]
-    out[0] = model[0]*in[0]  + model[1]*in[1]  + model[2]*in[2]   + model[3]*in[3];
-    out[1] = model[4]*in[0]  + model[5]*in[1]  + model[6]*in[2]   + model[7]*in[3];
-    out[2] = model[8]*in[0]  + model[9]*in[1]  + model[10]*in[2]  + model[11]*in[3];
-    out[3] = model[12]*in[0] + model[13]*in[1] + model[14]*in[2]  + model[15]*in[3];
+    // Multiply by modelview matrix (column-major layout from OpenGL)
+    // Memory layout: first column is indices 0,4,8,12; second column 1,5,9,13; etc.
+    out[0] = model[0]*in[0]  + model[4]*in[1]  + model[8]*in[2]   + model[12]*in[3];
+    out[1] = model[1]*in[0]  + model[5]*in[1]  + model[9]*in[2]   + model[13]*in[3];
+    out[2] = model[2]*in[0]  + model[6]*in[1]  + model[10]*in[2]  + model[14]*in[3];
+    out[3] = model[3]*in[0]  + model[7]*in[1]  + model[11]*in[2]  + model[15]*in[3];
 
-    // Multiply by projection matrix - ROW-MAJOR interpretation
-    in[0] = proj[0]*out[0]  + proj[1]*out[1]  + proj[2]*out[2]   + proj[3]*out[3];
-    in[1] = proj[4]*out[0]  + proj[5]*out[1]  + proj[6]*out[2]   + proj[7]*out[3];
-    in[2] = proj[8]*out[0]  + proj[9]*out[1]  + proj[10]*out[2]  + proj[11]*out[3];
-    in[3] = proj[12]*out[0] + proj[13]*out[1] + proj[14]*out[2]  + proj[15]*out[3];
+    // Multiply by projection matrix (column-major layout)
+    in[0] = proj[0]*out[0]  + proj[4]*out[1]  + proj[8]*out[2]   + proj[12]*out[3];
+    in[1] = proj[1]*out[0]  + proj[5]*out[1]  + proj[9]*out[2]   + proj[13]*out[3];
+    in[2] = proj[2]*out[0]  + proj[6]*out[1]  + proj[10]*out[2]  + proj[14]*out[3];
+    in[3] = proj[3]*out[0]  + proj[7]*out[1]  + proj[11]*out[2]  + proj[15]*out[3];
 
     // Check if w is too small (behind camera)
     if (in[3] < 0.0001) return false;
