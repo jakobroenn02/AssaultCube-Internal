@@ -66,7 +66,7 @@ private:
     static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x0017E0A8;  // Absolute: 0x0057E0A8 - Also the camera pointer!
     static constexpr uintptr_t OFFSET_CAMERA_PTR = 0x0017E0A8;   // Absolute: 0x0057E0A8 - Camera/view pointer (same as local player)
     static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x0018AC04;   // Absolute: 0x0058AC04
-    static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x17DFD0;     // Found with Cheat Engine - GL_MODELVIEW_MATRIX (64 bytes)
+    static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x0017E010;   // Absolute: 0x0057E010 - GL_MODELVIEW_MATRIX (row-major: rotation + translation)
     static constexpr uintptr_t OFFSET_PROJECTION_MATRIX = 0x0017E0B0;  // Absolute: 0x0057E0B0 - GL_PROJECTION_MATRIX (64 bytes)
     static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x0018AC0C;  // Absolute: 0x0058AC0C
     
@@ -99,9 +99,10 @@ private:
     static constexpr uintptr_t OFFSET_PLAYER_STATE2 = 0x77;  // Byte: environment state (water/ground)
     
     // Position & Velocity
-    static constexpr uintptr_t OFFSET_POS_X_ACTUAL = 0x04;  // Float: Player X position
-    static constexpr uintptr_t OFFSET_POS_Y_ACTUAL = 0x08;  // Float: Player Y position
-    static constexpr uintptr_t OFFSET_POS_Z_ACTUAL = 0x0C;  // Float: Player Z position
+    static constexpr uintptr_t OFFSET_POS_X_ACTUAL = 0x04;  // Float: Player X position (feet)
+    static constexpr uintptr_t OFFSET_POS_Y_ACTUAL = 0x08;  // Float: Player Y position (feet)
+    static constexpr uintptr_t OFFSET_POS_Z_ACTUAL = 0x0C;  // Float: Player Z position (feet)
+    static constexpr uintptr_t OFFSET_EYE_HEIGHT = 0x50;    // Float: Eye height offset from feet
     static constexpr uintptr_t OFFSET_VEL_X = 0x10;  // Float: Velocity X
     static constexpr uintptr_t OFFSET_VEL_Y = 0x14;  // Float: Velocity Y
     static constexpr uintptr_t OFFSET_VEL_Z = 0x18;  // Float: Velocity Z
@@ -123,8 +124,7 @@ private:
     static constexpr uintptr_t OFFSET_POS_Z = 0x28;
     
     // Camera offsets
-    static constexpr uintptr_t OFFSET_CAMERA_X = 0x34;
-    static constexpr uintptr_t OFFSET_CAMERA_Y = 0x38;
+
     
     // Fast fire offsets
     static constexpr uintptr_t OFFSET_FASTFIRE_AR = 0x164;
@@ -191,6 +191,7 @@ public:
     bool IsPlayerAlive(uintptr_t playerPtr);
     int GetPlayerTeam(uintptr_t playerPtr);
     void GetPlayerPosition(uintptr_t playerPtr, float& x, float& y, float& z);
+    void GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, float& z);
     void GetPlayerName(uintptr_t playerPtr, char* name, size_t maxLen);
     void GetLocalPlayerPosition(float& x, float& y, float& z);
     void GetLocalPlayerAngles(float& yaw, float& pitch);

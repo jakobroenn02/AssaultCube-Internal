@@ -415,10 +415,26 @@ void Trainer::GetPlayerPosition(uintptr_t playerPtr, float& x, float& y, float& 
         x = y = z = 0.0f;
         return;
     }
-    
+
     x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
     y = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
     z = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+}
+
+void Trainer::GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, float& z) {
+    if (!playerPtr) {
+        x = y = z = 0.0f;
+        return;
+    }
+
+    // Get feet position
+    x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
+    y = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
+    z = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+
+    // Add eye height to get head position
+    float eyeHeight = Memory::Read<float>(playerPtr + OFFSET_EYE_HEIGHT);
+    z += eyeHeight;
 }
 
 void Trainer::GetPlayerName(uintptr_t playerPtr, char* name, size_t maxLen) {
@@ -765,27 +781,11 @@ static void MultiplyMatrix(const float* a, const float* b, float* result) {
     }
 }
 
-// Get the combined view-projection matrix (projection * modelview)
+// Get the combined view-projection matrix
+// In AssaultCube, the view matrix at 0x0057E010 is already the combined modelview-projection matrix
 void Trainer::GetViewProjectionMatrix(float* outMatrix) {
-    float modelview[16];
-    float projection[16];
-
-    GetViewMatrix(modelview);
-    GetProjectionMatrix(projection);
-
-    // TEMPORARY: Just use modelview, projection offset might be wrong
-    // Check if projection matrix looks valid (diagonal elements should be non-zero for perspective)
-    bool projectionValid = (fabs(projection[0]) > 0.01f &&
-                           fabs(projection[5]) > 0.01f &&
-                           fabs(projection[10]) > 0.01f);
-
-    if (projectionValid) {
-        // OpenGL multiplies projection * modelview
-        MultiplyMatrix(projection, modelview, outMatrix);
-    } else {
-        // Projection matrix is invalid, just use modelview
-        memcpy(outMatrix, modelview, 16 * sizeof(float));
-    }
+    // The "view matrix" in AC is actually already combined with projection
+    GetViewMatrix(outMatrix);
 }
 
 // ========== AIMBOT IMPLEMENTATION ==========
@@ -856,13 +856,18 @@ void Trainer::CalculateAngles(const float* from, const float* to, float& yaw, fl
     float dz = to[2] - from[2];
 
     // Calculate yaw (horizontal angle)
-    // Try the ORIGINAL formula - might have been correct all along
-    yaw = atan2(dy, dx) * (180.0f / 3.14159265f);
+    // Using AssaultCube's formula: -atan2(delta.x, delta.y) * 180/π + 180
+    yaw = -atan2(dx, dy) * (180.0f / 3.14159265f);
+    yaw += 180.0f;
+
+    // Normalize to 0-360 range
+    while (yaw >= 360.0f) yaw -= 360.0f;
+    while (yaw < 0.0f) yaw += 360.0f;
 
     // Calculate pitch (vertical angle)
-    // pitch is angle up/down
+    // Using atan2(delta.z, hipotenuse) * 180/π
     float horizontalDist = sqrt(dx * dx + dy * dy);
-    pitch = -atan2(dz, horizontalDist) * (180.0f / 3.14159265f);
+    pitch = atan2(dz, horizontalDist) * (180.0f / 3.14159265f);
 }
 
 // Calculate FOV (field of view) angle to a target

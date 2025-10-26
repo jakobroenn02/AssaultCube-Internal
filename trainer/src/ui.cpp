@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <thread>
 #include <cmath>
+#include <algorithm>
 #include <windowsx.h>
 
 // Simple vector structs for matrix math
@@ -27,19 +28,26 @@ struct ViewMatrix {
 bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const ViewMatrix& matrix, int width, int height) {
     const float* m = matrix.data;
 
-    float clipX = pos.x * m[0] + pos.y * m[4] + pos.z * m[8] + m[12];
-    float clipY = pos.x * m[1] + pos.y * m[5] + pos.z * m[9] + m[13];
-    float clipW = pos.x * m[3] + pos.y * m[7] + pos.z * m[11] + m[15];
+    // Calculate clip coordinates
+    float clipX = m[0] * pos.x + m[4] * pos.y + m[8] * pos.z + m[12];
+    float clipY = m[1] * pos.x + m[5] * pos.y + m[9] * pos.z + m[13];
+    float clipZ = m[2] * pos.x + m[6] * pos.y + m[10] * pos.z + m[14];
+    float clipW = m[3] * pos.x + m[7] * pos.y + m[11] * pos.z + m[15];
 
+    // Check if behind camera
     if (clipW < 0.1f) {
         return false;
     }
 
+    // Calculate normalized device coordinates (NDC)
     float ndcX = clipX / clipW;
     float ndcY = clipY / clipW;
+    float ndcZ = clipZ / clipW;
 
+    // Convert NDC to screen coordinates
     screen[0] = (width * 0.5f) + (ndcX * width * 0.5f);
     screen[1] = (height * 0.5f) - (ndcY * height * 0.5f);
+
     return true;
 }
 
@@ -971,26 +979,29 @@ void UIRenderer::Shutdown() {
 }
 
 void UIRenderer::RenderESP(Trainer& trainer) {
-    // ALWAYS draw debug marker first to confirm ESP is being called
-    ImDrawList* debugDrawList = ImGui::GetForegroundDrawList();
-    debugDrawList->AddRectFilled(ImVec2(10, 200), ImVec2(210, 240), IM_COL32(255, 0, 255, 200));
-    debugDrawList->AddText(ImVec2(15, 205), IM_COL32(255, 255, 255, 255), "ESP FUNCTION CALLED");
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
 
     // Get screen dimensions
     RECT clientRect;
-    if (!GetClientRect(gameWindow, &clientRect)) {
-        debugDrawList->AddText(ImVec2(15, 220), IM_COL32(255, 0, 0, 255), "GetClientRect FAILED");
-        return;
-    }
+    if (!GetClientRect(gameWindow, &clientRect)) return;
 
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
 
-    // Get combined view-projection matrix (modelview * projection)
+    // ===== DEBUG PANEL - TOP LEFT =====
+    int debugY = 10;
+    const int debugLineHeight = 16;
+
+    // ESP Status
+    drawList->AddRectFilled(ImVec2(5, debugY - 2), ImVec2(400, debugY + 130), IM_COL32(0, 0, 0, 180));
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 255, 255), "=== ESP DEBUG ===");
+    debugY += debugLineHeight;
+
+    // Get combined view-projection matrix
     ViewMatrix viewProjMatrix = {};
     trainer.GetViewProjectionMatrix(viewProjMatrix.data);
 
-    // Guard against an uninitialized matrix (all zeros) which would fail the projection test.
+    // Check matrix validity
     bool hasValidMatrix = false;
     for (float value : viewProjMatrix.data) {
         if (value != 0.0f) {
@@ -999,86 +1010,115 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         }
     }
 
-    // DEBUG: Show first few matrix values
+    // Matrix debug
     char matrixDebug[256];
     snprintf(matrixDebug, sizeof(matrixDebug), "ViewProj[0-3]: %.2f %.2f %.2f %.2f",
              viewProjMatrix.data[0], viewProjMatrix.data[1], viewProjMatrix.data[2], viewProjMatrix.data[3]);
-    debugDrawList->AddText(ImVec2(15, 250), IM_COL32(200, 200, 255, 255), matrixDebug);
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
+    debugY += debugLineHeight;
 
     if (!hasValidMatrix) {
-        debugDrawList->AddText(ImVec2(15, 220), IM_COL32(255, 0, 0, 255), "MATRIX IS ALL ZEROS");
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 0, 255), "ERROR: Matrix is all zeros!");
         return;
     }
 
     // Get all players
     std::vector<uintptr_t> players;
     if (!trainer.GetPlayerList(players)) {
-        debugDrawList->AddText(ImVec2(15, 220), IM_COL32(255, 0, 0, 255), "GetPlayerList FAILED");
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 0, 255), "ERROR: GetPlayerList failed!");
         return;
     }
 
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    
-    // Draw ESP info in top-right corner
-    char infoText[128];
-    snprintf(infoText, sizeof(infoText), "ESP ACTIVE: %d players", (int)players.size());
-    drawList->AddText(ImVec2(screenWidth - 180.0f, 80.0f), IM_COL32(0, 255, 0, 255), infoText);
+    char playerCount[128];
+    snprintf(playerCount, sizeof(playerCount), "Player Count: %d", (int)players.size());
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(0, 255, 0, 255), playerCount);
+    debugY += debugLineHeight;
 
-    
+
     int validPlayers = 0;
     int offScreenPlayers = 0;
-    
+    int playerDebugLine = 0;
+
     // Draw each player with 3D world-to-screen projection
     for (uintptr_t playerPtr : players) {
         bool valid = trainer.IsPlayerValid(playerPtr);
         bool alive = trainer.IsPlayerAlive(playerPtr);
         int team = trainer.GetPlayerTeam(playerPtr);
-        float x, y, z;
-        trainer.GetPlayerPosition(playerPtr, x, y, z);
+
+        // Get feet and head positions
+        float feetX, feetY, feetZ;
+        float headX, headY, headZ;
+        trainer.GetPlayerPosition(playerPtr, feetX, feetY, feetZ);
+        trainer.GetPlayerHeadPosition(playerPtr, headX, headY, headZ);
+
         char name[64] = {0};
         trainer.GetPlayerName(playerPtr, name, sizeof(name));
-
-        // Debug: show entity info for all entities
-        char entityDbg[256];
-        snprintf(entityDbg, sizeof(entityDbg), "Entity %s: valid=%d alive=%d team=%d pos=(%.1f,%.1f,%.1f)", name, valid, alive, team, x, y, z);
-        drawList->AddText(ImVec2(20, 120 + 16 * validPlayers), IM_COL32(255,128,0,255), entityDbg);
 
         if (!valid || !alive) continue;
         validPlayers++;
 
-        // Project 3D position to screen using combined view-projection matrix
-        Vec3 pos = {x, y, z};
-        float screenPos[2];
-        if (!WorldToScreenMatrix(pos, screenPos, viewProjMatrix, screenWidth, screenHeight)) {
+        // Project both feet and head positions to screen
+        Vec3 feetPos = {feetX, feetY, feetZ};
+        Vec3 headPos = {headX, headY, headZ};
+        float screenFeet[2], screenHead[2];
+
+        bool feetOnScreen = WorldToScreenMatrix(feetPos, screenFeet, viewProjMatrix, screenWidth, screenHeight);
+        bool headOnScreen = WorldToScreenMatrix(headPos, screenHead, viewProjMatrix, screenWidth, screenHeight);
+
+        // Skip if both feet and head are offscreen
+        if (!feetOnScreen && !headOnScreen) {
             offScreenPlayers++;
-            continue;  // Player is off screen or behind camera
+
+            // Debug: Show why player is offscreen (only first 3 to avoid spam)
+            if (playerDebugLine < 3) {
+                char offscreenDbg[256];
+                snprintf(offscreenDbg, sizeof(offscreenDbg), "  [OFFSCREEN] %s at (%.0f,%.0f,%.0f)", name, feetX, feetY, feetZ);
+                drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 100, 0, 255), offscreenDbg);
+                debugY += debugLineHeight;
+                playerDebugLine++;
+            }
+            continue;
         }
-        float screenX = screenPos[0];
-        float screenY = screenPos[1];
-        // Debug output for position and projection
-        char dbg[256];
-        snprintf(dbg, sizeof(dbg), "Player %s: World(%.1f,%.1f,%.1f) -> Screen(%.1f,%.1f)", name, x, y, z, screenX, screenY);
-        drawList->AddText(ImVec2(20, 140 + 16 * validPlayers), IM_COL32(255,255,0,255), dbg);
+
+        // Calculate bounding box dimensions
+        // In screen space: smaller Y = top of screen, larger Y = bottom of screen
+        // Head should be at top (min Y), feet should be at bottom (max Y)
+        float minY = (screenHead[1] < screenFeet[1]) ? screenHead[1] : screenFeet[1];
+        float maxY = (screenHead[1] > screenFeet[1]) ? screenHead[1] : screenFeet[1];
+        float boxHeight = maxY - minY;
+        float boxWidth = boxHeight / 2.0f;  // Width is half of height
+
+        // Use the average X position for centering
+        float centerX = (screenHead[0] + screenFeet[0]) / 2.0f;
+
+        // Debug: Show successful projection (only first 3)
+        if (playerDebugLine < 3) {
+            char projDbg[256];
+            snprintf(projDbg, sizeof(projDbg), "  [VISIBLE] %s: Feet(%.0f,%.0f) Head(%.0f,%.0f) H=%.0f",
+                     name, screenFeet[0], screenFeet[1], screenHead[0], screenHead[1], boxHeight);
+            drawList->AddText(ImVec2(10, debugY), IM_COL32(0, 255, 0, 255), projDbg);
+            debugY += debugLineHeight;
+            playerDebugLine++;
+        }
+
         // Choose color based on team (red for enemies, green for teammates)
         ImU32 boxColor = IM_COL32(255, 50, 50, 200);  // Red for enemies
         ImU32 textColor = IM_COL32(255, 255, 255, 255);  // White text
-        
-        // Draw box around player (feet at screenY, head above)
-        float boxWidth = 40.0f;
-        float boxHeight = 60.0f;
-        ImVec2 topLeft(screenX - boxWidth/2, screenY - boxHeight);
-        ImVec2 bottomRight(screenX + boxWidth/2, screenY);
-        
+
+        // Draw box with correct top and bottom
+        ImVec2 topLeft(centerX - boxWidth/2, minY);
+        ImVec2 bottomRight(centerX + boxWidth/2, maxY);
+
         // Draw filled background with transparency
         drawList->AddRectFilled(topLeft, bottomRight, IM_COL32(0, 0, 0, 100));
         // Draw box outline
         drawList->AddRect(topLeft, bottomRight, boxColor, 0.0f, 0, 2.0f);
-        
-        // Draw player name above box
+
+        // Draw player name above box (above the top of the box)
         if (name[0] != 0) {
             ImVec2 textSize = ImGui::CalcTextSize(name);
-            ImVec2 namePos(screenX - textSize.x/2, screenY - boxHeight - 15.0f);
-            
+            ImVec2 namePos(centerX - textSize.x/2, minY - 15.0f);
+
             // Draw text background
             drawList->AddRectFilled(
                 ImVec2(namePos.x - 2, namePos.y - 2),
@@ -1087,13 +1127,11 @@ void UIRenderer::RenderESP(Trainer& trainer) {
             );
             drawList->AddText(namePos, textColor, name);
         }
-        
-        // Draw distance indicator below box
-        // ...existing code...
     }
-    
-    // Draw debug info
-    char debugText[128];
-    snprintf(debugText, sizeof(debugText), "Valid: %d | OffScreen: %d", validPlayers, offScreenPlayers);
-    drawList->AddText(ImVec2(screenWidth - 180.0f, 100.0f), IM_COL32(200, 200, 200, 255), debugText);
+
+    // Summary stats at bottom of debug panel
+    char summaryText[128];
+    snprintf(summaryText, sizeof(summaryText), "Valid: %d | OffScreen: %d | Rendered: %d",
+             validPlayers, offScreenPlayers, validPlayers - offScreenPlayers);
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 255, 0, 255), summaryText);
 }
