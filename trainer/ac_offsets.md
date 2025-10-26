@@ -67,7 +67,7 @@ Example address: 0x0058AC0C
 
 - [x] **No Recoil** - Zero out +0xCB and +0xCC
 - [] **ESP / Wallhack** - Read player array, positions, and team
-- [] **Aimbot** - Calculate angles, write to +0x34 and +0xE
+- [x] **Aimbot** - Calculate angles, write to +0x34 and +0xE
 - [] **Speed Hack** - Modify +0x11 multiplier
 - [] **Teleport** - Write to +0x4, +0x8, +0xC positions
 - [] **Fly Mode** - Set player state (+0x77) to 3 (swimming)
