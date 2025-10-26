@@ -15,12 +15,13 @@ class Trainer {
     // ...existing code...
 public:
     // Reads the view matrix from game memory
-    void GetViewMatrix(float* outMatrix) {
-        uintptr_t matrixAddr = moduleBase + OFFSET_VIEW_MATRIX;
-        for (int i = 0; i < 16; ++i) {
-            outMatrix[i] = Memory::Read<float>(matrixAddr + i * sizeof(float));
-        }
-    }
+    void GetViewMatrix(float* outMatrix);
+
+    // Reads the projection matrix from game memory
+    void GetProjectionMatrix(float* outMatrix);
+
+    // Gets the combined view-projection matrix (modelview * projection)
+    void GetViewProjectionMatrix(float* outMatrix);
 private:
     uintptr_t moduleBase;
     bool isRunning;
@@ -62,11 +63,18 @@ private:
     std::vector<BYTE> originalAmmoBytes;
     
     // Static offsets from addresses.md (updated)
-    static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x0017E0A8;  // Fixed - was 0x17B0B8
+    static constexpr uintptr_t OFFSET_LOCALPLAYER = 0x0017E0A8;  // Absolute: 0x0057E0A8 - Also the camera pointer!
+    static constexpr uintptr_t OFFSET_CAMERA_PTR = 0x0017E0A8;   // Absolute: 0x0057E0A8 - Camera/view pointer (same as local player)
     static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x0018AC04;   // Absolute: 0x0058AC04
-    static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x17AFE0;
+    static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x0017E010;   // Absolute: 0x0057E010 - GL_MODELVIEW_MATRIX (64 bytes)
+    static constexpr uintptr_t OFFSET_PROJECTION_MATRIX = 0x0017E0B0;  // Absolute: 0x0057E0B0 - GL_PROJECTION_MATRIX (64 bytes)
     static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x0018AC0C;  // Absolute: 0x0058AC0C
     
+    // Camera structure offsets (from camera pointer at 0x0057E0A8)
+    static constexpr uintptr_t OFFSET_CAMERA_X = 0x04;  // Eye/camera X position
+    static constexpr uintptr_t OFFSET_CAMERA_Y = 0x08;  // Eye/camera Y position
+    static constexpr uintptr_t OFFSET_CAMERA_Z = 0x0C;  // Eye/camera Z position (already at eye height!)
+
     // Player offsets
     static constexpr uintptr_t OFFSET_HEALTH = 0xEC;
     static constexpr uintptr_t OFFSET_ARMOR = 0xF0;

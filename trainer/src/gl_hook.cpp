@@ -10,13 +10,35 @@
 
 namespace {
 using SwapBuffersFn = BOOL(WINAPI*)(HDC);
+using glLoadMatrixfFn = void (WINAPI*)(const float*);
 
 std::mutex g_hookMutex;
 SwapBuffersFn g_originalSwapBuffers = nullptr;
+glLoadMatrixfFn g_originalGlLoadMatrixf = nullptr;
 void* g_swapBuffersTarget = nullptr;
+void* g_glLoadMatrixfTarget = nullptr;
 bool g_hooksInstalled = false;
 Trainer* g_trainer = nullptr;
 UIRenderer* g_uiRenderer = nullptr;
+
+// Captured view matrix from glLoadMatrixf
+float g_capturedViewMatrix[16] = {0};
+bool g_viewMatrixValid = false;
+std::mutex g_matrixMutex;
+
+void WINAPI glLoadMatrixfDetour(const float* m) {
+    // Capture the matrix (this is called when the game loads the view matrix)
+    if (m) {
+        std::lock_guard<std::mutex> lock(g_matrixMutex);
+        memcpy(g_capturedViewMatrix, m, 16 * sizeof(float));
+        g_viewMatrixValid = true;
+    }
+
+    // Call original function
+    if (g_originalGlLoadMatrixf) {
+        g_originalGlLoadMatrixf(m);
+    }
+}
 
 BOOL WINAPI SwapBuffersDetour(HDC hdc) {
     if (g_uiRenderer && g_trainer) {
@@ -32,13 +54,26 @@ BOOL WINAPI SwapBuffersDetour(HDC hdc) {
 
 void ResetState() {
     g_originalSwapBuffers = nullptr;
+    g_originalGlLoadMatrixf = nullptr;
     g_swapBuffersTarget = nullptr;
+    g_glLoadMatrixfTarget = nullptr;
     g_hooksInstalled = false;
     g_trainer = nullptr;
     g_uiRenderer = nullptr;
+    g_viewMatrixValid = false;
+    memset(g_capturedViewMatrix, 0, sizeof(g_capturedViewMatrix));
 }
 
 } // namespace
+
+bool GetCapturedViewMatrix(float* outMatrix) {
+    std::lock_guard<std::mutex> lock(g_matrixMutex);
+    if (!g_viewMatrixValid || !outMatrix) {
+        return false;
+    }
+    memcpy(outMatrix, g_capturedViewMatrix, 16 * sizeof(float));
+    return true;
+}
 
 bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer) {
     std::lock_guard<std::mutex> lock(g_hookMutex);
@@ -77,10 +112,11 @@ bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer) {
         return false;
     }
 
+    // Hook wglSwapBuffers
     status = MH_CreateHook(target, reinterpret_cast<LPVOID>(&SwapBuffersDetour),
                            reinterpret_cast<LPVOID*>(&g_originalSwapBuffers));
     if (status != MH_OK && status != MH_ERROR_ALREADY_CREATED) {
-        std::cout << "[GL Hook] ERROR: MH_CreateHook failed with status: " << status << std::endl;
+        std::cout << "[GL Hook] ERROR: MH_CreateHook (SwapBuffers) failed with status: " << status << std::endl;
         MH_Uninitialize();
         ResetState();
         return false;
@@ -88,7 +124,7 @@ bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer) {
 
     status = MH_EnableHook(target);
     if (status != MH_OK && status != MH_ERROR_ENABLED) {
-        std::cout << "[GL Hook] ERROR: MH_EnableHook failed with status: " << status << std::endl;
+        std::cout << "[GL Hook] ERROR: MH_EnableHook (SwapBuffers) failed with status: " << status << std::endl;
         MH_RemoveHook(target);
         MH_Uninitialize();
         ResetState();
@@ -96,6 +132,29 @@ bool InstallHooks(HWND gameWindow, Trainer* trainer, UIRenderer* renderer) {
     }
 
     g_swapBuffersTarget = target;
+
+    // Hook glLoadMatrixf to capture view matrix
+    void* glLoadMatrixfAddr = reinterpret_cast<void*>(GetProcAddress(openglModule, "glLoadMatrixf"));
+    if (glLoadMatrixfAddr) {
+        std::cout << "[GL Hook] glLoadMatrixf located at: " << glLoadMatrixfAddr << std::endl;
+
+        status = MH_CreateHook(glLoadMatrixfAddr, reinterpret_cast<LPVOID>(&glLoadMatrixfDetour),
+                               reinterpret_cast<LPVOID*>(&g_originalGlLoadMatrixf));
+        if (status == MH_OK || status == MH_ERROR_ALREADY_CREATED) {
+            status = MH_EnableHook(glLoadMatrixfAddr);
+            if (status == MH_OK || status == MH_ERROR_ENABLED) {
+                g_glLoadMatrixfTarget = glLoadMatrixfAddr;
+                std::cout << "[GL Hook] glLoadMatrixf hook installed successfully." << std::endl;
+            } else {
+                std::cout << "[GL Hook] WARNING: MH_EnableHook (glLoadMatrixf) failed with status: " << status << std::endl;
+            }
+        } else {
+            std::cout << "[GL Hook] WARNING: MH_CreateHook (glLoadMatrixf) failed with status: " << status << std::endl;
+        }
+    } else {
+        std::cout << "[GL Hook] WARNING: Could not locate glLoadMatrixf" << std::endl;
+    }
+
     g_hooksInstalled = true;
     g_trainer = trainer;
     g_uiRenderer = renderer;
@@ -114,6 +173,11 @@ void RemoveHooks() {
     if (g_swapBuffersTarget) {
         MH_DisableHook(g_swapBuffersTarget);
         MH_RemoveHook(g_swapBuffersTarget);
+    }
+
+    if (g_glLoadMatrixfTarget) {
+        MH_DisableHook(g_glLoadMatrixfTarget);
+        MH_RemoveHook(g_glLoadMatrixfTarget);
     }
 
     MH_Uninitialize();

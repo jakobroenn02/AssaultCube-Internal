@@ -971,32 +971,52 @@ void UIRenderer::Shutdown() {
 }
 
 void UIRenderer::RenderESP(Trainer& trainer) {
+    // ALWAYS draw debug marker first to confirm ESP is being called
+    ImDrawList* debugDrawList = ImGui::GetForegroundDrawList();
+    debugDrawList->AddRectFilled(ImVec2(10, 200), ImVec2(210, 240), IM_COL32(255, 0, 255, 200));
+    debugDrawList->AddText(ImVec2(15, 205), IM_COL32(255, 255, 255, 255), "ESP FUNCTION CALLED");
+
     // Get screen dimensions
     RECT clientRect;
-    if (!GetClientRect(gameWindow, &clientRect)) return;
-    
+    if (!GetClientRect(gameWindow, &clientRect)) {
+        debugDrawList->AddText(ImVec2(15, 220), IM_COL32(255, 0, 0, 255), "GetClientRect FAILED");
+        return;
+    }
+
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
 
-    ViewMatrix viewMatrix = {};
-    trainer.GetViewMatrix(viewMatrix.data);
+    // Get combined view-projection matrix (modelview * projection)
+    ViewMatrix viewProjMatrix = {};
+    trainer.GetViewProjectionMatrix(viewProjMatrix.data);
 
     // Guard against an uninitialized matrix (all zeros) which would fail the projection test.
     bool hasValidMatrix = false;
-    for (float value : viewMatrix.data) {
+    for (float value : viewProjMatrix.data) {
         if (value != 0.0f) {
             hasValidMatrix = true;
             break;
         }
     }
+
+    // DEBUG: Show first few matrix values
+    char matrixDebug[256];
+    snprintf(matrixDebug, sizeof(matrixDebug), "ViewProj[0-3]: %.2f %.2f %.2f %.2f",
+             viewProjMatrix.data[0], viewProjMatrix.data[1], viewProjMatrix.data[2], viewProjMatrix.data[3]);
+    debugDrawList->AddText(ImVec2(15, 250), IM_COL32(200, 200, 255, 255), matrixDebug);
+
     if (!hasValidMatrix) {
+        debugDrawList->AddText(ImVec2(15, 220), IM_COL32(255, 0, 0, 255), "MATRIX IS ALL ZEROS");
         return;
     }
 
     // Get all players
     std::vector<uintptr_t> players;
-    if (!trainer.GetPlayerList(players)) return;
-    
+    if (!trainer.GetPlayerList(players)) {
+        debugDrawList->AddText(ImVec2(15, 220), IM_COL32(255, 0, 0, 255), "GetPlayerList FAILED");
+        return;
+    }
+
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
     
     // Draw ESP info in top-right corner
@@ -1026,10 +1046,10 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         if (!valid || !alive) continue;
         validPlayers++;
 
-        // Project 3D position to screen using matrix
+        // Project 3D position to screen using combined view-projection matrix
         Vec3 pos = {x, y, z};
         float screenPos[2];
-        if (!WorldToScreenMatrix(pos, screenPos, viewMatrix, screenWidth, screenHeight)) {
+        if (!WorldToScreenMatrix(pos, screenPos, viewProjMatrix, screenWidth, screenHeight)) {
             offScreenPlayers++;
             continue;  // Player is off screen or behind camera
         }

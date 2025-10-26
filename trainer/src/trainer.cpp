@@ -705,6 +705,89 @@ void Trainer::ShutdownOverlay() {
     }
 }
 
+// ========== MATRIX IMPLEMENTATION ==========
+// Get the view (modelview) matrix from game memory
+void Trainer::GetViewMatrix(float* outMatrix) {
+    uintptr_t matrixAddr = moduleBase + OFFSET_VIEW_MATRIX;
+    for (int i = 0; i < 16; ++i) {
+        outMatrix[i] = Memory::Read<float>(matrixAddr + i * sizeof(float));
+    }
+
+    // Fallback: Try hook if static address returns all zeros
+    bool hasValidMatrix = false;
+    for (int i = 0; i < 16; ++i) {
+        if (outMatrix[i] != 0.0f) {
+            hasValidMatrix = true;
+            break;
+        }
+    }
+
+    if (!hasValidMatrix && !GetCapturedViewMatrix(outMatrix)) {
+        // Last resort: identity matrix
+        memset(outMatrix, 0, 16 * sizeof(float));
+        outMatrix[0] = outMatrix[5] = outMatrix[10] = outMatrix[15] = 1.0f;
+    }
+}
+
+// Get the projection matrix from game memory
+void Trainer::GetProjectionMatrix(float* outMatrix) {
+    uintptr_t matrixAddr = moduleBase + OFFSET_PROJECTION_MATRIX;
+    for (int i = 0; i < 16; ++i) {
+        outMatrix[i] = Memory::Read<float>(matrixAddr + i * sizeof(float));
+    }
+
+    // Check if valid
+    bool hasValidMatrix = false;
+    for (int i = 0; i < 16; ++i) {
+        if (outMatrix[i] != 0.0f) {
+            hasValidMatrix = true;
+            break;
+        }
+    }
+
+    if (!hasValidMatrix) {
+        // Return identity if invalid
+        memset(outMatrix, 0, 16 * sizeof(float));
+        outMatrix[0] = outMatrix[5] = outMatrix[10] = outMatrix[15] = 1.0f;
+    }
+}
+
+// Multiply two 4x4 matrices: result = a * b
+static void MultiplyMatrix(const float* a, const float* b, float* result) {
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            result[row * 4 + col] =
+                a[row * 4 + 0] * b[0 * 4 + col] +
+                a[row * 4 + 1] * b[1 * 4 + col] +
+                a[row * 4 + 2] * b[2 * 4 + col] +
+                a[row * 4 + 3] * b[3 * 4 + col];
+        }
+    }
+}
+
+// Get the combined view-projection matrix (projection * modelview)
+void Trainer::GetViewProjectionMatrix(float* outMatrix) {
+    float modelview[16];
+    float projection[16];
+
+    GetViewMatrix(modelview);
+    GetProjectionMatrix(projection);
+
+    // TEMPORARY: Just use modelview, projection offset might be wrong
+    // Check if projection matrix looks valid (diagonal elements should be non-zero for perspective)
+    bool projectionValid = (fabs(projection[0]) > 0.01f &&
+                           fabs(projection[5]) > 0.01f &&
+                           fabs(projection[10]) > 0.01f);
+
+    if (projectionValid) {
+        // OpenGL multiplies projection * modelview
+        MultiplyMatrix(projection, modelview, outMatrix);
+    } else {
+        // Projection matrix is invalid, just use modelview
+        memcpy(outMatrix, modelview, 16 * sizeof(float));
+    }
+}
+
 // ========== AIMBOT IMPLEMENTATION ==========
 // Educational: This demonstrates how aimbots work in 3D games
 
@@ -773,7 +856,7 @@ void Trainer::CalculateAngles(const float* from, const float* to, float& yaw, fl
     float dz = to[2] - from[2];
 
     // Calculate yaw (horizontal angle)
-    // In AssaultCube: yaw is rotation around Z axis
+    // Try the ORIGINAL formula - might have been correct all along
     yaw = atan2(dy, dx) * (180.0f / 3.14159265f);
 
     // Calculate pitch (vertical angle)
@@ -911,10 +994,19 @@ void Trainer::UpdateAimbot() {
     uintptr_t target = 0;
     bool useFOV = aimbotUseFOV.load();
 
+    // DEBUG: Check target finding
+    static int targetCheckCount = 0;
+    bool debugPrint = (targetCheckCount++ % 200 == 0);
+
     if (useFOV) {
         // FOV-based targeting: aim at enemy closest to crosshair
         float fov = 0.0f;
         target = FindClosestEnemyToCrosshair(fov);
+
+        if (debugPrint) {
+            std::cout << "[AIMBOT] FOV mode - Found target: " << (target ? "YES" : "NO")
+                      << " (FOV: " << fov << ")" << std::endl;
+        }
 
         if (!target || fov < 0.0f) {
             return;  // No target found within FOV
@@ -924,6 +1016,11 @@ void Trainer::UpdateAimbot() {
         float distance = 0.0f;
         target = FindClosestEnemy(distance);
 
+        if (debugPrint) {
+            std::cout << "[AIMBOT] Distance mode - Found target: " << (target ? "YES" : "NO")
+                      << " (Distance: " << distance << ")" << std::endl;
+        }
+
         if (!target || distance < 0.0f) {
             return;  // No valid target found
         }
@@ -931,6 +1028,9 @@ void Trainer::UpdateAimbot() {
         // Don't aim at targets too far away
         const float maxAimbotDistance = 500.0f;
         if (distance > maxAimbotDistance) {
+            if (debugPrint) {
+                std::cout << "[AIMBOT] Target too far: " << distance << " > " << maxAimbotDistance << std::endl;
+            }
             return;
         }
     }
@@ -945,11 +1045,43 @@ void Trainer::UpdateAimbot() {
     GetPlayerPosition(target, targetX, targetY, targetZ);
     targetZ += 10.0f;  // Aim at enemy head
 
+    // DEBUG: Print positions AND raw memory values every 100 frames
+    static int frameCount = 0;
+    if (frameCount++ % 100 == 0) {
+        std::cout << "[AIMBOT DEBUG]" << std::endl;
+        std::cout << "  Local pos: (" << localX << ", " << localY << ", " << localZ << ")" << std::endl;
+        std::cout << "  Target pos: (" << targetX << ", " << targetY << ", " << targetZ << ")" << std::endl;
+
+        // VERIFY: Read raw position and velocity from target to check offsets
+        float rawX = Memory::Read<float>(target + 0x04);
+        float rawY = Memory::Read<float>(target + 0x08);
+        float rawZ = Memory::Read<float>(target + 0x0C);
+        float velX = Memory::Read<float>(target + 0x10);
+        float velY = Memory::Read<float>(target + 0x14);
+        float velZ = Memory::Read<float>(target + 0x18);
+        std::cout << "  RAW Target +0x04/08/0C: (" << rawX << ", " << rawY << ", " << rawZ << ")" << std::endl;
+        std::cout << "  RAW Velocity +0x10/14/18: (" << velX << ", " << velY << ", " << velZ << ")" << std::endl;
+
+        // Get current angles
+        float currentYaw = Memory::Read<float>(playerBase + OFFSET_YAW);
+        float currentPitch = Memory::Read<float>(playerBase + OFFSET_PITCH);
+        std::cout << "  Current angles: Yaw=" << currentYaw << " Pitch=" << currentPitch << std::endl;
+    }
+
     // Calculate required angles
     float localPos[3] = { localX, localY, localZ };
     float targetPos[3] = { targetX, targetY, targetZ };
     float targetYaw, targetPitch;
     CalculateAngles(localPos, targetPos, targetYaw, targetPitch);
+
+    // DEBUG: Print calculated angles
+    if (frameCount % 100 == 1) {
+        std::cout << "  Target angles: Yaw=" << targetYaw << " Pitch=" << targetPitch << std::endl;
+        float dx = targetX - localX;
+        float dy = targetY - localY;
+        float dz = targetZ - localZ;
+        std::cout << "  Delta: dx=" << dx << " dy=" << dy << " dz=" << dz << std::endl;
+    }
 
     // Smooth aim toward target
     SmoothAim(targetYaw, targetPitch);
