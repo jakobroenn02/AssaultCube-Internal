@@ -17,6 +17,7 @@ set(SOURCES
     src/dllmain.cpp
     src/trainer.cpp
     src/gl_hook.cpp
+    src/render_utils.cpp
     src/ui.cpp
     src/pch.cpp
 )
@@ -35,6 +36,7 @@ set(HEADERS
     include/trainer.h
     include/memory.h
     include/gl_hook.h
+    include/render_utils.h
     src/pch.h
 )
 
