@@ -427,14 +427,22 @@ void Trainer::GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, flo
         return;
     }
 
-    // Get feet position
-    x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
-    y = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
-    z = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+    // Method 1: Read pre-calculated head position (updated by game during rendering)
+    // This is the most accurate method as the game maintains these values
+    x = Memory::Read<float>(playerPtr + OFFSET_HEAD_X);  // 0x3F8
+    y = Memory::Read<float>(playerPtr + OFFSET_HEAD_Y);  // 0x3FC
+    z = Memory::Read<float>(playerPtr + OFFSET_HEAD_Z);  // 0x400
 
-    // Add eye height to get head position
-    float eyeHeight = Memory::Read<float>(playerPtr + OFFSET_EYE_HEIGHT);
-    z += eyeHeight;
+    // Sanity check: if head position seems invalid, fall back to calculation method
+    if (x < -10000.0f || x > 10000.0f || y < -10000.0f || y > 10000.0f) {
+        // Method 2 (Fallback): Calculate head position from feet + height
+        x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
+        y = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
+        z = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+
+        float playerHeight = Memory::Read<float>(playerPtr + OFFSET_PLAYER_HEIGHT);  // 0x38
+        z += playerHeight;
+    }
 }
 
 void Trainer::GetPlayerName(uintptr_t playerPtr, char* name, size_t maxLen) {

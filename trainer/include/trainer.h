@@ -102,11 +102,17 @@ private:
     static constexpr uintptr_t OFFSET_POS_X_ACTUAL = 0x04;  // Float: Player X position (feet)
     static constexpr uintptr_t OFFSET_POS_Y_ACTUAL = 0x08;  // Float: Player Y position (feet)
     static constexpr uintptr_t OFFSET_POS_Z_ACTUAL = 0x0C;  // Float: Player Z position (feet)
-    static constexpr uintptr_t OFFSET_EYE_HEIGHT = 0x50;    // Float: Eye height offset from feet
     static constexpr uintptr_t OFFSET_VEL_X = 0x10;  // Float: Velocity X
     static constexpr uintptr_t OFFSET_VEL_Y = 0x14;  // Float: Velocity Y
     static constexpr uintptr_t OFFSET_VEL_Z = 0x18;  // Float: Velocity Z
     static constexpr uintptr_t OFFSET_MOVEMENT_SPEED = 0x44;  // Float: Movement speed multiplier
+
+    // Player height and head position (more accurate for ESP)
+    static constexpr uintptr_t OFFSET_PLAYER_HEIGHT = 0x38;    // Float: Current player height constant
+    static constexpr uintptr_t OFFSET_EYE_HEIGHT = 0x50;       // Float: Eye height offset from feet (old method)
+    static constexpr uintptr_t OFFSET_HEAD_X = 0x3F8;          // Float: Pre-calculated head X position
+    static constexpr uintptr_t OFFSET_HEAD_Y = 0x3FC;          // Float: Pre-calculated head Y position
+    static constexpr uintptr_t OFFSET_HEAD_Z = 0x400;          // Float: Pre-calculated head Z position
     
     // Ammo offsets
     static constexpr uintptr_t OFFSET_AR_AMMO = 0x140;

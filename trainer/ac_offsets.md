@@ -483,14 +483,33 @@ All players (including bots) are stored in the same array structure:
 
 **Note**: AssaultCube uses a simplified hitbox system, not full skeletal animation
 
-#### Main Hitbox Areas
-| Offset | Type | Name | Description |
-|--------|------|------|-------------|
-| `+0x4, +0x8, +0xC` | `float[3]` | **Center Position** | Main body center (X, Y, Z) |
-| `+0x14` | `float` | **Current Height** | Height from ground (for head) |
-| `+0x15` | `float` | **Max Height** | Player max height (collision box) |
-| `+0x50` | `float` | **Eye Height** | Camera/eye level offset from feet |
-| `+0x58` | `float` | **Crouch Height** | Height when crouching |
+### Complete Player Structure for Enemy Head/Feet Detection:
+Base Position (Feet/Ground Position):
+
+Offset +0x04: X coordinate (float)
+Offset +0x08: Y coordinate (float)
+Offset +0x0C: Z coordinate (float)
+
+Eye Height / Head Height:
+
+Offset +0x38: Current player height constant (float)
+
+Address 0x0055BB60: Standing height constant
+Address 0x0055BFC0: Spectator/flying height constant
+
+
+
+Head Position (Calculated):
+
+Offset +0x3F8: Head X position (float)
+Offset +0x3FC: Head Y position (float)
+Offset +0x400: Head Z position (float)
+
+Eye/Camera Position:
+
+Offset +0x50: Eye height offset (float) - this is subtracted from Z in rendering
+Offset +0x58: Additional Z offset (float)
+
 
 #### Calculating Hitbox Positions
 ```cpp

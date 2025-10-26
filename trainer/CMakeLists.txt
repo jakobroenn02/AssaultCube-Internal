@@ -59,7 +59,7 @@ add_library(ACTrainer SHARED ${SOURCES} ${IMGUI_SOURCES} ${HEADERS})
 target_link_libraries(ACTrainer
     minhook
     psapi
-    opengl32
+    opengl32   # For OpenGL API (glGetDoublev, etc.)
     gdi32
     imm32
 )

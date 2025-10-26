@@ -11,44 +11,263 @@
 #include <cmath>
 #include <algorithm>
 #include <windowsx.h>
+#include <gl/GL.h>
 
 // Simple vector structs for matrix math
 struct Vec3 { float x, y, z; };
 
 namespace {
 
-struct ViewMatrix {
-    float data[16];
-};
+// ============================================================================
+// NEW APPROACH: Use OpenGL's ACTUAL live matrices via glGet*
+// Manual gluProject implementation to avoid GLU dependency
+// ============================================================================
 
-// AssaultCube exposes a row-major view-projection matrix in memory. Treating the
-// data as DirectX-style rows matches the approach used by external overlays such as
-// GuidedHacking's AssaultCube ESP examples and keeps our projections aligned with
-// the in-game renderer.
-bool WorldToScreenMatrix(const Vec3& pos, float screen[2], const ViewMatrix& matrix, int width, int height) {
-    const float* m = matrix.data;
+// Manual implementation of gluProject (to avoid glu32.lib dependency)
+// IMPORTANT: AssaultCube stores matrices in ROW-MAJOR format despite using OpenGL!
+bool ManualGLUProject(double objX, double objY, double objZ,
+                      const double* model, const double* proj, const int* viewport,
+                      double* winX, double* winY, double* winZ) {
+    // Transform object coordinates to eye coordinates using modelview matrix
+    double in[4] = { objX, objY, objZ, 1.0 };
+    double out[4];
 
-    // Calculate clip coordinates
-    float clipX = m[0] * pos.x + m[4] * pos.y + m[8] * pos.z + m[12];
-    float clipY = m[1] * pos.x + m[5] * pos.y + m[9] * pos.z + m[13];
-    float clipZ = m[2] * pos.x + m[6] * pos.y + m[10] * pos.z + m[14];
-    float clipW = m[3] * pos.x + m[7] * pos.y + m[11] * pos.z + m[15];
+    // Multiply by modelview matrix - ROW-MAJOR interpretation
+    // Memory layout: [row0: m0 m1 m2 m3] [row1: m4 m5 m6 m7] [row2: m8 m9 m10 m11] [row3: m12 m13 m14 m15]
+    out[0] = model[0]*in[0]  + model[1]*in[1]  + model[2]*in[2]   + model[3]*in[3];
+    out[1] = model[4]*in[0]  + model[5]*in[1]  + model[6]*in[2]   + model[7]*in[3];
+    out[2] = model[8]*in[0]  + model[9]*in[1]  + model[10]*in[2]  + model[11]*in[3];
+    out[3] = model[12]*in[0] + model[13]*in[1] + model[14]*in[2]  + model[15]*in[3];
 
-    // Check if behind camera
-    if (clipW < 0.1f) {
+    // Multiply by projection matrix - ROW-MAJOR interpretation
+    in[0] = proj[0]*out[0]  + proj[1]*out[1]  + proj[2]*out[2]   + proj[3]*out[3];
+    in[1] = proj[4]*out[0]  + proj[5]*out[1]  + proj[6]*out[2]   + proj[7]*out[3];
+    in[2] = proj[8]*out[0]  + proj[9]*out[1]  + proj[10]*out[2]  + proj[11]*out[3];
+    in[3] = proj[12]*out[0] + proj[13]*out[1] + proj[14]*out[2]  + proj[15]*out[3];
+
+    // Check if w is too small (behind camera)
+    if (in[3] < 0.0001) return false;
+
+    // Perspective divide
+    in[0] /= in[3];
+    in[1] /= in[3];
+    in[2] /= in[3];
+
+    // Map to viewport
+    *winX = viewport[0] + (1.0 + in[0]) * viewport[2] / 2.0;
+    *winY = viewport[1] + (1.0 + in[1]) * viewport[3] / 2.0;
+    *winZ = (1.0 + in[2]) / 2.0;
+
+    return true;
+}
+
+// World to screen using OpenGL's current matrices (CORRECT APPROACH)
+bool WorldToScreen(const Vec3& world, float screen[2]) {
+    // Get OpenGL's CURRENT matrices and viewport
+    GLdouble modelview[16];
+    GLdouble projection[16];
+    GLint viewport[4];
+
+    glGetDoublev(GL_MODELVIEW_MATRIX, modelview);
+    glGetDoublev(GL_PROJECTION_MATRIX, projection);
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
+    // Use our manual gluProject implementation
+    GLdouble screenX, screenY, screenZ;
+    bool result = ManualGLUProject(
+        world.x, world.y, world.z,
+        modelview, projection, viewport,
+        &screenX, &screenY, &screenZ
+    );
+
+    // Check if projection succeeded and point is in front of camera
+    if (!result || screenZ < 0.0 || screenZ > 1.0) {
         return false;
     }
 
-    // Calculate normalized device coordinates (NDC)
-    float ndcX = clipX / clipW;
-    float ndcY = clipY / clipW;
-    float ndcZ = clipZ / clipW;
-
-    // Convert NDC to screen coordinates
-    screen[0] = (width * 0.5f) + (ndcX * width * 0.5f);
-    screen[1] = (height * 0.5f) - (ndcY * height * 0.5f);
+    // Convert to screen coordinates (Y is bottom-up in OpenGL)
+    screen[0] = static_cast<float>(screenX);
+    screen[1] = static_cast<float>(viewport[3] - screenY);  // Flip Y for screen coords
 
     return true;
+}
+
+// ============================================================================
+// OpenGL Drawing Helper Functions (from esp_implementation.cpp template)
+// ============================================================================
+
+// Draw a 2D line using OpenGL
+void DrawLineGL(float x1, float y1, float x2, float y2, float r, float g, float b, float a) {
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(r, g, b, a);
+    glLineWidth(2.0f);
+
+    glBegin(GL_LINES);
+    glVertex2f(x1, y1);
+    glVertex2f(x2, y2);
+    glEnd();
+
+    glEnable(GL_TEXTURE_2D);
+}
+
+// Draw a 2D box using OpenGL
+void DrawBoxGL(float x, float y, float width, float height, float r, float g, float b, float a) {
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(r, g, b, a);
+    glLineWidth(2.0f);
+
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x, y);
+    glVertex2f(x + width, y);
+    glVertex2f(x + width, y + height);
+    glVertex2f(x, y + height);
+    glEnd();
+
+    glEnable(GL_TEXTURE_2D);
+}
+
+// Draw filled box using OpenGL
+void DrawFilledBoxGL(float x, float y, float width, float height, float r, float g, float b, float a) {
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(r, g, b, a);
+
+    glBegin(GL_QUADS);
+    glVertex2f(x, y);
+    glVertex2f(x + width, y);
+    glVertex2f(x + width, y + height);
+    glVertex2f(x, y + height);
+    glEnd();
+
+    glEnable(GL_TEXTURE_2D);
+}
+
+// Draw a 2D ESP box (simple and fast) - NEW: Uses OpenGL's live matrices
+void Draw2DBox(const Vec3& feet, const Vec3& head, float r, float g, float b) {
+    float screenFeet[2], screenHead[2];
+
+    // Project using OpenGL's CURRENT matrices
+    if (!WorldToScreen(feet, screenFeet))
+        return;
+    if (!WorldToScreen(head, screenHead))
+        return;
+
+    // Get viewport for bounds checking
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    int screenWidth = viewport[2];
+    int screenHeight = viewport[3];
+
+    // Validate screen coordinates are reasonable
+    if (screenFeet[0] < -100 || screenFeet[0] > screenWidth + 100 ||
+        screenFeet[1] < -100 || screenFeet[1] > screenHeight + 100 ||
+        screenHead[0] < -100 || screenHead[0] > screenWidth + 100 ||
+        screenHead[1] < -100 || screenHead[1] > screenHeight + 100) {
+        return;  // Skip if way off screen
+    }
+
+    // Calculate box dimensions - use absolute value to handle any Y inversion
+    float height = (std::abs)(screenFeet[1] - screenHead[1]);  // Parentheses avoid macro conflicts
+
+    // Sanity check: height should be reasonable (not too small or huge)
+    if (height < 10.0f || height > screenHeight * 2.0f) {
+        return;  // Skip if box would be invalid
+    }
+
+    float width = height * 0.4f;  // Width is 40% of height
+
+    // Use the minimum Y as top (head should be above feet)
+    float topY = (std::min)(screenFeet[1], screenHead[1]);  // Parentheses avoid Windows.h min macro
+    float centerX = (screenFeet[0] + screenHead[0]) * 0.5f;  // Average X position
+
+    float x = centerX - width / 2.0f;
+    float y = topY;
+
+    // Draw filled background
+    DrawFilledBoxGL(x, y, width, height, 0.0f, 0.0f, 0.0f, 0.4f);
+    // Draw box outline
+    DrawBoxGL(x, y, width, height, r, g, b, 1.0f);
+}
+
+// Draw snapline from screen center to target - NEW: Uses OpenGL's live matrices
+void DrawSnapline(const Vec3& targetPos, float r, float g, float b) {
+    float screenPos[2];
+    if (!WorldToScreen(targetPos, screenPos))
+        return;
+
+    // Get viewport to find screen center
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    float centerX = viewport[2] / 2.0f;
+    float centerY = viewport[3] / 2.0f;
+
+    DrawLineGL(centerX, centerY, screenPos[0], screenPos[1], r, g, b, 0.7f);
+}
+
+// Draw a 3D box around a player - NEW: Uses OpenGL's live matrices
+void Draw3DBox(const Vec3& feet, const Vec3& head, float r, float g, float b) {
+    // Define 8 corners of the bounding box
+    float boxWidth = 0.4f;  // Half-width of player
+    Vec3 corners[8];
+
+    // Bottom corners (feet level)
+    corners[0] = {feet.x - boxWidth, feet.y - boxWidth, feet.z};
+    corners[1] = {feet.x + boxWidth, feet.y - boxWidth, feet.z};
+    corners[2] = {feet.x + boxWidth, feet.y + boxWidth, feet.z};
+    corners[3] = {feet.x - boxWidth, feet.y + boxWidth, feet.z};
+
+    // Top corners (head level)
+    corners[4] = {head.x - boxWidth, head.y - boxWidth, head.z};
+    corners[5] = {head.x + boxWidth, head.y - boxWidth, head.z};
+    corners[6] = {head.x + boxWidth, head.y + boxWidth, head.z};
+    corners[7] = {head.x - boxWidth, head.y + boxWidth, head.z};
+
+    // Convert to screen coordinates using OpenGL's live matrices
+    float screenCorners[8][2];
+    for (int i = 0; i < 8; i++) {
+        if (!WorldToScreen(corners[i], screenCorners[i]))
+            return;  // Don't draw if any corner is behind camera
+    }
+
+    // Draw the box edges
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(r, g, b, 1.0f);
+    glLineWidth(2.0f);
+
+    glBegin(GL_LINES);
+    // Bottom square
+    for (int i = 0; i < 4; i++) {
+        glVertex2f(screenCorners[i][0], screenCorners[i][1]);
+        glVertex2f(screenCorners[(i + 1) % 4][0], screenCorners[(i + 1) % 4][1]);
+    }
+    // Top square
+    for (int i = 4; i < 8; i++) {
+        glVertex2f(screenCorners[i][0], screenCorners[i][1]);
+        glVertex2f(screenCorners[i == 7 ? 4 : i + 1][0], screenCorners[i == 7 ? 4 : i + 1][1]);
+    }
+    // Vertical lines
+    for (int i = 0; i < 4; i++) {
+        glVertex2f(screenCorners[i][0], screenCorners[i][1]);
+        glVertex2f(screenCorners[i + 4][0], screenCorners[i + 4][1]);
+    }
+    glEnd();
+
+    glEnable(GL_TEXTURE_2D);
+}
+
+// Calculate distance between two points
+float Distance3D(const Vec3& a, const Vec3& b) {
+    float dx = b.x - a.x;
+    float dy = b.y - a.y;
+    float dz = b.z - a.z;
+    return sqrtf(dx*dx + dy*dy + dz*dz);
 }
 
 } // namespace
@@ -988,39 +1207,32 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     int screenWidth = clientRect.right;
     int screenHeight = clientRect.bottom;
 
-    // ===== DEBUG PANEL - TOP LEFT =====
+    // ===== DEBUG PANEL - TOP LEFT (Still using ImGui for text) =====
     int debugY = 10;
     const int debugLineHeight = 16;
 
     // ESP Status
     drawList->AddRectFilled(ImVec2(5, debugY - 2), ImVec2(400, debugY + 130), IM_COL32(0, 0, 0, 180));
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 255, 255), "=== ESP DEBUG ===");
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 255, 255), "=== ESP DEBUG (Live GL Matrices) ===");
     debugY += debugLineHeight;
 
-    // Get combined view-projection matrix
-    ViewMatrix viewProjMatrix = {};
-    trainer.GetViewProjectionMatrix(viewProjMatrix.data);
+    // NEW: Read matrices directly from OpenGL for debug
+    GLdouble modelview[16];
+    glGetDoublev(GL_MODELVIEW_MATRIX, modelview);
 
-    // Check matrix validity
-    bool hasValidMatrix = false;
-    for (float value : viewProjMatrix.data) {
-        if (value != 0.0f) {
-            hasValidMatrix = true;
-            break;
-        }
-    }
-
-    // Matrix debug
+    // Matrix debug - show key elements
     char matrixDebug[256];
-    snprintf(matrixDebug, sizeof(matrixDebug), "ViewProj[0-3]: %.2f %.2f %.2f %.2f",
-             viewProjMatrix.data[0], viewProjMatrix.data[1], viewProjMatrix.data[2], viewProjMatrix.data[3]);
+    snprintf(matrixDebug, sizeof(matrixDebug), "ModelView: [0-3]=%.2f,%.2f,%.2f,%.2f [12-15]=%.2f,%.2f,%.2f,%.2f",
+             (float)modelview[0], (float)modelview[1], (float)modelview[2], (float)modelview[3],
+             (float)modelview[12], (float)modelview[13], (float)modelview[14], (float)modelview[15]);
     drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
     debugY += debugLineHeight;
 
-    if (!hasValidMatrix) {
-        drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 0, 255), "ERROR: Matrix is all zeros!");
-        return;
-    }
+    // Show screen dimensions
+    char screenInfo[128];
+    snprintf(screenInfo, sizeof(screenInfo), "Screen: %dx%d (from RECT)", screenWidth, screenHeight);
+    drawList->AddText(ImVec2(10, debugY), IM_COL32(150, 150, 255, 255), screenInfo);
+    debugY += debugLineHeight;
 
     // Get all players
     std::vector<uintptr_t> players;
@@ -1034,12 +1246,25 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     drawList->AddText(ImVec2(10, debugY), IM_COL32(0, 255, 0, 255), playerCount);
     debugY += debugLineHeight;
 
+    // Get local player position for distance calculations
+    float localX, localY, localZ;
+    trainer.GetLocalPlayerPosition(localX, localY, localZ);
+    Vec3 localPos = {localX, localY, localZ};
 
     int validPlayers = 0;
     int offScreenPlayers = 0;
     int playerDebugLine = 0;
 
-    // Draw each player with 3D world-to-screen projection
+    // ===== SETUP OPENGL STATE FOR 2D RENDERING =====
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, screenWidth, screenHeight, 0, -1, 1);  // 2D orthographic projection
+    glDisable(GL_DEPTH_TEST);
+
+    // Draw each player using OpenGL
     for (uintptr_t playerPtr : players) {
         bool valid = trainer.IsPlayerValid(playerPtr);
         bool alive = trainer.IsPlayerAlive(playerPtr);
@@ -1057,13 +1282,17 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         if (!valid || !alive) continue;
         validPlayers++;
 
-        // Project both feet and head positions to screen
+        // Create position vectors
         Vec3 feetPos = {feetX, feetY, feetZ};
         Vec3 headPos = {headX, headY, headZ};
-        float screenFeet[2], screenHead[2];
 
-        bool feetOnScreen = WorldToScreenMatrix(feetPos, screenFeet, viewProjMatrix, screenWidth, screenHeight);
-        bool headOnScreen = WorldToScreenMatrix(headPos, screenHead, viewProjMatrix, screenWidth, screenHeight);
+        // Calculate distance from local player
+        float distance = Distance3D(localPos, feetPos);
+
+        // Check if on screen (for debug) - NEW: Uses OpenGL's live matrices
+        float screenFeet[2], screenHead[2];
+        bool feetOnScreen = WorldToScreen(feetPos, screenFeet);
+        bool headOnScreen = WorldToScreen(headPos, screenHead);
 
         // Skip if both feet and head are offscreen
         if (!feetOnScreen && !headOnScreen) {
@@ -1080,44 +1309,51 @@ void UIRenderer::RenderESP(Trainer& trainer) {
             continue;
         }
 
-        // Calculate bounding box dimensions
-        // In screen space: smaller Y = top of screen, larger Y = bottom of screen
-        // Head should be at top (min Y), feet should be at bottom (max Y)
-        float minY = (screenHead[1] < screenFeet[1]) ? screenHead[1] : screenFeet[1];
-        float maxY = (screenHead[1] > screenFeet[1]) ? screenHead[1] : screenFeet[1];
-        float boxHeight = maxY - minY;
-        float boxWidth = boxHeight / 2.0f;  // Width is half of height
-
-        // Use the average X position for centering
-        float centerX = (screenHead[0] + screenFeet[0]) / 2.0f;
-
         // Debug: Show successful projection (only first 3)
         if (playerDebugLine < 3) {
-            char projDbg[256];
-            snprintf(projDbg, sizeof(projDbg), "  [VISIBLE] %s: Feet(%.0f,%.0f) Head(%.0f,%.0f) H=%.0f",
-                     name, screenFeet[0], screenFeet[1], screenHead[0], screenHead[1], boxHeight);
+            char projDbg[512];
+            snprintf(projDbg, sizeof(projDbg), "  [VISIBLE] %s: Dist=%.1f", name, distance);
             drawList->AddText(ImVec2(10, debugY), IM_COL32(0, 255, 0, 255), projDbg);
             debugY += debugLineHeight;
+
+            // Show world positions
+            char worldDbg[256];
+            snprintf(worldDbg, sizeof(worldDbg), "    World: Feet(%.1f,%.1f,%.1f) Head(%.1f,%.1f,%.1f)",
+                     feetX, feetY, feetZ, headX, headY, headZ);
+            drawList->AddText(ImVec2(10, debugY), IM_COL32(150, 150, 255, 255), worldDbg);
+            debugY += debugLineHeight;
+
+            // Show screen positions
+            char screenDbg[256];
+            snprintf(screenDbg, sizeof(screenDbg), "    Screen: Feet(%.0f,%.0f) Head(%.0f,%.0f)",
+                     screenFeet[0], screenFeet[1], screenHead[0], screenHead[1]);
+            drawList->AddText(ImVec2(10, debugY), IM_COL32(150, 255, 150, 255), screenDbg);
+            debugY += debugLineHeight;
+
             playerDebugLine++;
         }
 
-        // Choose color based on team (red for enemies, green for teammates)
-        ImU32 boxColor = IM_COL32(255, 50, 50, 200);  // Red for enemies
-        ImU32 textColor = IM_COL32(255, 255, 255, 255);  // White text
+        // Choose color based on distance (red = close, yellow = far)
+        float r = 1.0f, g = 0.0f, b = 0.0f;
+        if (distance > 50.0f) {
+            r = 1.0f; g = 1.0f; b = 0.0f;  // Yellow for far enemies
+        }
 
-        // Draw box with correct top and bottom
-        ImVec2 topLeft(centerX - boxWidth/2, minY);
-        ImVec2 bottomRight(centerX + boxWidth/2, maxY);
+        // ===== DRAW ESP ELEMENTS USING OPENGL (NEW: Uses live matrices!) =====
 
-        // Draw filled background with transparency
-        drawList->AddRectFilled(topLeft, bottomRight, IM_COL32(0, 0, 0, 100));
-        // Draw box outline
-        drawList->AddRect(topLeft, bottomRight, boxColor, 0.0f, 0, 2.0f);
+        // Option 1: Draw 2D box (fast and simple)
+        Draw2DBox(feetPos, headPos, r, g, b);
 
-        // Draw player name above box (above the top of the box)
-        if (name[0] != 0) {
+        // Option 2: Draw 3D box (more detailed, uncomment to use)
+        // Draw3DBox(feetPos, headPos, r, g, b);
+
+        // Option 3: Draw snapline from screen center to enemy
+        DrawSnapline(feetPos, r, g, b);
+
+        // Draw player name above box using ImGui (for now - could be replaced with OpenGL text rendering)
+        if (name[0] != 0 && headOnScreen) {
             ImVec2 textSize = ImGui::CalcTextSize(name);
-            ImVec2 namePos(centerX - textSize.x/2, minY - 15.0f);
+            ImVec2 namePos(screenHead[0] - textSize.x/2, screenHead[1] - 15.0f);
 
             // Draw text background
             drawList->AddRectFilled(
@@ -1125,9 +1361,15 @@ void UIRenderer::RenderESP(Trainer& trainer) {
                 ImVec2(namePos.x + textSize.x + 2, namePos.y + textSize.y + 2),
                 IM_COL32(0, 0, 0, 150)
             );
-            drawList->AddText(namePos, textColor, name);
+            drawList->AddText(namePos, IM_COL32(255, 255, 255, 255), name);
         }
     }
+
+    // ===== RESTORE OPENGL STATE =====
+    glEnable(GL_DEPTH_TEST);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
 
     // Summary stats at bottom of debug panel
     char summaryText[128];
