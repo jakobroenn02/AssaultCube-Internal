@@ -45,6 +45,13 @@ private:
     int panelPadding;
     int sectionSpacing;
 
+    // Drag-and-drop state
+    bool isDragging;
+    float panelPosX;
+    float panelPosY;
+    float dragOffsetX;
+    float dragOffsetY;
+
     ImFont* headerFont;
     ImFont* textFont;
     ImFont* smallFont;

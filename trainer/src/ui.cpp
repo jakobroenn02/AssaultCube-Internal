@@ -70,6 +70,11 @@ UIRenderer::UIRenderer()
       panelWidth(360),
       panelPadding(18),
       sectionSpacing(22),
+      isDragging(false),
+      panelPosX(24.0f),
+      panelPosY(24.0f),
+      dragOffsetX(0.0f),
+      dragOffsetY(0.0f),
       headerFont(nullptr),
       textFont(nullptr),
       smallFont(nullptr) {
@@ -627,7 +632,7 @@ void UIRenderer::SetMenuVisible(bool visible) {
 
 void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    const ImVec2 panelPos(24.0f, 24.0f);
+    ImGuiIO& io = ImGui::GetIO();
 
     const float headerHeight = 50.0f;
     const float hintHeight = 24.0f;
@@ -649,8 +654,56 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     const float panelHeight = static_cast<float>(panelPadding) * 2.0f +
                               headerHeight + hintHeight + togglesHeight + statsHeight + aimbotHeight + unloadHeight;
 
+    // Handle drag-and-drop BEFORE drawing (so position updates immediately)
+    ImVec2 panelPos(panelPosX, panelPosY);
     ImVec2 panelMin = panelPos;
     ImVec2 panelMax(panelPos.x + static_cast<float>(panelWidth), panelPos.y + panelHeight);
+
+    const float dragAreaHeight = headerHeight;
+    ImVec2 dragAreaMin = panelMin;
+    ImVec2 dragAreaMax(panelMax.x, panelMin.y + dragAreaHeight);
+
+    bool isDragAreaHovered = io.MousePos.x >= dragAreaMin.x && io.MousePos.x <= dragAreaMax.x &&
+                             io.MousePos.y >= dragAreaMin.y && io.MousePos.y <= dragAreaMax.y;
+
+    // Start dragging when mouse is clicked in the header area
+    if (isDragAreaHovered && ImGui::IsMouseClicked(0)) {
+        isDragging = true;
+        dragOffsetX = io.MousePos.x - panelPosX;
+        dragOffsetY = io.MousePos.y - panelPosY;
+    }
+
+    // Stop dragging when mouse is released
+    if (!ImGui::IsMouseDown(0)) {
+        isDragging = false;
+    }
+
+    // Update panel position while dragging
+    if (isDragging) {
+        panelPosX = io.MousePos.x - dragOffsetX;
+        panelPosY = io.MousePos.y - dragOffsetY;
+
+        // Clamp to screen bounds
+        RECT clientRect;
+        if (GetClientRect(gameWindow, &clientRect)) {
+            float screenWidth = static_cast<float>(clientRect.right);
+            float screenHeight = static_cast<float>(clientRect.bottom);
+
+            // Keep at least 50px of the panel visible
+            const float minVisible = 50.0f;
+            if (panelPosX < -panelWidth + minVisible) panelPosX = -panelWidth + minVisible;
+            if (panelPosX > screenWidth - minVisible) panelPosX = screenWidth - minVisible;
+            if (panelPosY < 0.0f) panelPosY = 0.0f;
+            if (panelPosY > screenHeight - minVisible) panelPosY = screenHeight - minVisible;
+        }
+
+        // Recalculate positions after drag
+        panelPos = ImVec2(panelPosX, panelPosY);
+        panelMin = panelPos;
+        panelMax = ImVec2(panelPos.x + static_cast<float>(panelWidth), panelPos.y + panelHeight);
+        dragAreaMin = panelMin;
+        dragAreaMax = ImVec2(panelMax.x, panelMin.y + dragAreaHeight);
+    }
 
     // Modern panel with shadow effect
     ImVec2 shadowOffset(4.0f, 4.0f);
@@ -669,6 +722,19 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
 
     // Accent border
     drawList->AddRect(panelMin, panelMax, kAccentColor, 12.0f, 0, 2.5f);
+
+    // Visual feedback: draw a drag cursor indicator when hovering over the header
+    if (isDragAreaHovered || isDragging) {
+        // Draw a subtle grab cursor hint
+        const char* dragHint = isDragging ? "[ DRAGGING ]" : "[ Drag Here ]";
+        ImVec2 hintSize = ImGui::CalcTextSize(dragHint);
+        ImVec2 hintPos(panelPos.x + (panelWidth - hintSize.x) * 0.5f, panelPos.y + 5.0f);
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          hintPos,
+                          isDragging ? kSuccessColor : kAccentColorDim,
+                          dragHint);
+    }
 
     float y = panelPos.y + static_cast<float>(panelPadding);
 
