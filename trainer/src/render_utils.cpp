@@ -134,18 +134,23 @@ void Draw2DBox(const Vec3& feet, const Vec3& head, float r, float g, float b, co
         return;
     }
 
-    float height = (std::abs)(screenFeet[1] - screenHead[1]);
+    float bottomY = (std::max)(screenFeet[1], screenHead[1]);
+    float topY = (std::min)(screenFeet[1], screenHead[1]);
 
+    float clampedTop = (std::clamp)(topY, 0.0f, static_cast<float>(screenHeight));
+    float clampedBottom = (std::clamp)(bottomY, 0.0f, static_cast<float>(screenHeight));
+
+    float height = clampedBottom - clampedTop;
     if (height < 10.0f || height > screenHeight * 2.0f) {
         return;
     }
 
     float width = height * 0.4f;
-    float topY = (std::min)(screenFeet[1], screenHead[1]);
     float centerX = (screenFeet[0] + screenHead[0]) * 0.5f;
+    centerX = (std::clamp)(centerX, 0.0f, static_cast<float>(screenWidth));
 
     float x = centerX - width / 2.0f;
-    float y = topY;
+    float y = clampedTop;
 
     DrawFilledBoxGL(x, y, width, height, 0.0f, 0.0f, 0.0f, 0.4f);
     DrawBoxGL(x, y, width, height, r, g, b, 1.0f);

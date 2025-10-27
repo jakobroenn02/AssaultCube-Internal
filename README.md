@@ -14,6 +14,15 @@ A cross-platform Bubble Tea interface for authenticating users, validating local
 - Hook library (`actrainer.dll`) with toggles for God Mode, Infinite Ammo, No Recoil, and other actions triggered by in-game hotkeys.【F:trainer/README.md†L5-L34】
 - Build scripts and CMake configuration for compiling the DLL on Windows before placing it at `trainer/actrainer.dll` for the loader to inject.【F:trainer/README.md†L36-L80】
 
+
+
+### Trainer ESP & Offsets
+- ESP rendering, hotkeys, and feature toggles: [`trainer/README.md`](trainer/README.md)
+- Memory layouts, matrices, and player offsets backing the overlay: [`trainer/ac_offsets.md`](trainer/ac_offsets.md)
+- Injection workflow and quick commands: [`INJECTION_GUIDE.md`](INJECTION_GUIDE.md) and [`QUICK_REFERENCE.md`](QUICK_REFERENCE.md)
+
+![ESP overlay](ss_ingame_pic.png)
+
 ## Project Layout
 
 ```
