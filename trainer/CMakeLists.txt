@@ -16,22 +16,58 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 set(SOURCES
     src/dllmain.cpp
     src/trainer.cpp
+    src/gl_hook.cpp
+    src/render_utils.cpp
+    src/ui.cpp
     src/pch.cpp
+)
+
+set(IMGUI_SOURCES
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/imgui_impl_opengl3.cpp
+    third_party/imgui/imgui_impl_win32.cpp
 )
 
 # Header files
 set(HEADERS
     include/trainer.h
     include/memory.h
+    include/gl_hook.h
+    include/render_utils.h
     src/pch.h
 )
 
+add_library(minhook STATIC
+    third_party/minhook/src/buffer.c
+    third_party/minhook/src/hook.c
+    third_party/minhook/src/trampoline.c
+    third_party/minhook/src/hde/hde32.c
+    third_party/minhook/src/hde/hde64.c
+)
+
+target_include_directories(minhook
+    PUBLIC ${PROJECT_SOURCE_DIR}/third_party/minhook/include
+    PRIVATE ${PROJECT_SOURCE_DIR}/third_party/minhook/src
+            ${PROJECT_SOURCE_DIR}/third_party/minhook/src/hde
+)
+
 # Create DLL
-add_library(ACTrainer SHARED ${SOURCES} ${HEADERS})
+add_library(ACTrainer SHARED ${SOURCES} ${IMGUI_SOURCES} ${HEADERS})
 
 # Link libraries
 target_link_libraries(ACTrainer
+    minhook
     psapi
+    opengl32   # For OpenGL API (glGetDoublev, etc.)
+    gdi32
+    imm32
+)
+
+target_include_directories(ACTrainer
+    PRIVATE ${PROJECT_SOURCE_DIR}/third_party/imgui
 )
 
 # Precompiled header

@@ -1,0 +1,95 @@
+DirectX Hooking Overview
+Implementing a DirectX swap-chain hook allows the trainer to render the overlay directly inside the game’s pipeline, replacing the current layered GDI window in trainer/src/ui.cpp. This boosts performance for both windowed and fullscreen modes.
+
+Hooking Goals
+Detour DirectX 9’s Present (or EndScene) call so custom overlay rendering can happen right before each frame.
+
+Share the game’s Direct3D device pointer with the overlay renderer, enabling Direct3D draw calls instead of GDI blits.
+
+Restore the original vtable entry cleanly when the trainer unloads.
+
+Implementation Plan
+1. Device Discovery & Hook Installation
+Install a Direct3D Present hook as soon as Trainer::Initialize has the game window handle, caching the original function pointer for later restoration.
+
+Suggested task
+Install DirectX 9 Present hook once the trainer is initialized
+
+
+2. Rendering Bridge Between Hook and UIRenderer
+Replace the layered-window drawing path with Direct3D/ImGui rendering invoked from the hooked Present.
+
+Suggested task
+Render overlay from Present detour instead of layered GDI window
+
+
+3. Input Routing Inside the Game Window
+With the overlay rendered inside the game frame, route input directly through the game window procedure.
+
+Suggested task
+Capture mouse/keyboard input for overlay while hooked
+
+
+4. Shutdown & Safety
+Ensure hooks and graphics state changes restore cleanly when the trainer unloads.
+
+Suggested task
+Restore original DirectX state on shutdown
+
+
+Tutorial: Implementing the DirectX Present Hook
+Set up dependencies
+
+Add MinHook sources to trainer/third_party/ and update the Visual Studio project or trainer/build_msvc.ps1.
+
+Include DirectX 9 headers (d3d9.h, d3dx9.h) via the project precompiled header trainer/include/pch.h.
+
+Create the hook module
+
+New files: trainer/include/d3d_hook.h, trainer/src/d3d_hook.cpp.
+
+Implement a helper that spawns a dummy Direct3D device with a hidden window to copy its vtable and locate the Present slot.
+
+Initialize MinHook, create a detour for Present, and expose InstallHooks/RemoveHooks.
+
+Write the detour function
+
+Signature: HRESULT WINAPI PresentHook(IDirect3DDevice9* device, const RECT*, const RECT*, HWND, const RGNDATA*).
+
+On the first call, initialize ImGui (or custom renderer) and pass the device to UIRenderer.
+
+Each frame:
+
+Begin a new ImGui frame, build overlay UI from Trainer::BuildFeatureToggles() and stats, and react to toggles.
+
+Render draw data, then invoke the original Present.
+
+Integrate with the trainer lifecycle
+
+In Trainer::Initialize, after creating UIRenderer, call InstallHooks(gameWindowHandle). If it fails, log a warning and fall back to the existing overlay.
+
+Update Trainer::~Trainer to call RemoveHooks() before deleting the renderer.
+
+Replace the GDI overlay
+
+Remove layered-window creation from UIRenderer::Initialize and convert GDI resources into ImGui style/state.
+
+Provide UIRenderer::RenderDX(IDirect3DDevice9* device, const std::vector<FeatureToggle>& toggles, const PlayerStats& stats) invoked from the detour.
+
+Handle input within the hook
+
+Subclass the game window in MainThread using SetWindowLongPtr, storing the original WndProc.
+
+Pass messages to ImGui (e.g., ImGui_ImplWin32_WndProcHandler) when the overlay is visible; otherwise, forward to the original WndProc.
+
+Testing checklist
+
+Launch AssaultCube via injection.LaunchAndInject and confirm the overlay renders in fullscreen and windowed modes.
+
+Toggle features from the overlay; verify memory edits still work (health/ammo).
+
+Trigger device loss (Alt+Tab) to ensure ImGui resets gracefully.
+
+Unload the trainer (END key or overlay button) and confirm the game continues rendering without artifacts.
+
+Following this plan replaces the fragile transparent window overlay with a performant DirectX hook for improved visual fidelity and compatibility.
