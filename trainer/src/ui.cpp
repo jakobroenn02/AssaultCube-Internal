@@ -70,6 +70,12 @@ UIRenderer::UIRenderer()
       panelWidth(360),
       panelPadding(18),
       sectionSpacing(22),
+      isDragging(false),
+      panelPosX(24.0f),
+      panelPosY(24.0f),
+      dragOffsetX(0.0f),
+      dragOffsetY(0.0f),
+      currentTab(UITab::MISC),
       headerFont(nullptr),
       textFont(nullptr),
       smallFont(nullptr) {
@@ -238,8 +244,17 @@ float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) 
     const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
     ImGuiIO& io = ImGui::GetIO();
 
+    // Filter out ESP and Aimbot toggles - they should be in their own tabs
+    std::vector<size_t> filteredIndices;
     for (size_t i = 0; i < featureToggles.size(); ++i) {
-        const bool isActive = featureToggles[i].isActive ? featureToggles[i].isActive() : false;
+        const std::string& name = featureToggles[i].name;
+        if (name != "ESP / Wallhack" && name != "Aimbot") {
+            filteredIndices.push_back(i);
+        }
+    }
+
+    for (size_t idx : filteredIndices) {
+        const bool isActive = featureToggles[idx].isActive ? featureToggles[idx].isActive() : false;
 
         ImVec2 minVec(start.x, y);
         ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
@@ -250,8 +265,8 @@ float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) 
 
         // Check for click
         if (isHovered && ImGui::IsMouseClicked(0)) {
-            if (featureToggles[i].onToggle) {
-                featureToggles[i].onToggle();
+            if (featureToggles[idx].onToggle) {
+                featureToggles[idx].onToggle();
             }
         }
 
@@ -260,8 +275,8 @@ float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) 
         ImU32 bgColorBottom = isHovered ? ColorU32(42, 47, 55) : ColorU32(32, 36, 42);
         ImU32 borderColor = isActive ? kSuccessColor : (isHovered ? kAccentColor : ColorU32(60, 70, 85));
 
-        // Draw gradient background
-        drawList->AddRectFilledMultiColor(minVec, maxVec, bgColorTop, bgColorTop, bgColorBottom, bgColorBottom);
+        // Draw gradient background with rounded corners
+        drawList->AddRectFilled(minVec, maxVec, bgColorTop, kCornerRadius);
 
         // Draw border with glow effect when active
         if (isActive) {
@@ -297,7 +312,7 @@ float UIRenderer::DrawFeatureToggles(ImDrawList* drawList, const ImVec2& start) 
                           textFont ? textFont->FontSize : ImGui::GetFontSize(),
                           textPos,
                           textColor,
-                          featureToggles[i].name.c_str());
+                          featureToggles[idx].name.c_str());
 
         y += kButtonHeight + kButtonSpacing;
     }
@@ -535,12 +550,11 @@ float UIRenderer::DrawUnloadButton(ImDrawList* drawList, const ImVec2& start, bo
         requestUnload = true;
     }
 
-    // Danger button styling
-    ImU32 bgColorTop = isHovered ? ColorU32(200, 70, 70) : ColorU32(160, 50, 50);
-    ImU32 bgColorBottom = isHovered ? ColorU32(180, 50, 50) : ColorU32(140, 35, 35);
+    // Danger button styling - use solid color with rounded corners
+    ImU32 bgColor = isHovered ? ColorU32(200, 70, 70) : ColorU32(160, 50, 50);
 
-    // Draw gradient background
-    drawList->AddRectFilledMultiColor(minVec, maxVec, bgColorTop, bgColorTop, bgColorBottom, bgColorBottom);
+    // Draw solid background with rounded corners (fixes glitchy artifacts)
+    drawList->AddRectFilled(minVec, maxVec, bgColor, kCornerRadius);
 
     // Border with warning color
     drawList->AddRect(minVec, maxVec, isHovered ? kWarningColor : kDangerColor, kCornerRadius, 0, isHovered ? 2.5f : 2.0f);
@@ -625,32 +639,435 @@ void UIRenderer::SetMenuVisible(bool visible) {
     }
 }
 
+float UIRenderer::DrawTabBar(ImDrawList* drawList, const ImVec2& start, float width) {
+    ImGuiIO& io = ImGui::GetIO();
+    const float tabHeight = 32.0f;
+    const float tabWidth = width / 3.0f;
+    float y = start.y;
+
+    struct TabInfo {
+        UITab tab;
+        const char* name;
+        const char* icon;
+    };
+
+    TabInfo tabs[] = {
+        {UITab::MISC, "MISC", "[M]"},
+        {UITab::AIMBOT, "AIMBOT", "[A]"},
+        {UITab::ESP, "ESP", "[E]"}
+    };
+
+    for (int i = 0; i < 3; ++i) {
+        float tabX = start.x + (i * tabWidth);
+        ImVec2 tabMin(tabX, y);
+        ImVec2 tabMax(tabX + tabWidth, y + tabHeight);
+
+        bool isActive = (currentTab == tabs[i].tab);
+        bool isHovered = io.MousePos.x >= tabMin.x && io.MousePos.x <= tabMax.x &&
+                         io.MousePos.y >= tabMin.y && io.MousePos.y <= tabMax.y;
+
+        // Handle tab click
+        if (isHovered && ImGui::IsMouseClicked(0)) {
+            currentTab = tabs[i].tab;
+        }
+
+        // Draw tab background
+        ImU32 tabBg;
+        if (isActive) {
+            tabBg = ColorU32(35, 40, 48);  // Darker for active tab
+        } else if (isHovered) {
+            tabBg = ColorU32(45, 50, 58);  // Lighter on hover
+        } else {
+            tabBg = ColorU32(40, 45, 52);  // Normal
+        }
+
+        drawList->AddRectFilled(tabMin, tabMax, tabBg);
+
+        // Draw tab border
+        if (isActive) {
+            // Active tab gets a top accent line
+            drawList->AddLine(
+                ImVec2(tabMin.x, tabMin.y),
+                ImVec2(tabMax.x, tabMin.y),
+                kAccentColor,
+                3.0f
+            );
+        }
+
+        // Draw vertical separators between tabs
+        if (i < 2) {
+            drawList->AddLine(
+                ImVec2(tabMax.x, tabMin.y),
+                ImVec2(tabMax.x, tabMax.y),
+                ColorU32(60, 65, 75, 100),
+                1.0f
+            );
+        }
+
+        // Draw tab text
+        char tabText[32];
+        snprintf(tabText, sizeof(tabText), "%s %s", tabs[i].icon, tabs[i].name);
+        ImVec2 textSize = ImGui::CalcTextSize(tabText);
+        ImVec2 textPos(
+            tabX + (tabWidth - textSize.x) * 0.5f,
+            y + (tabHeight - textSize.y) * 0.5f
+        );
+
+        ImU32 textColor = isActive ? kAccentColor : (isHovered ? ColorU32(200, 205, 210) : ColorU32(150, 155, 160));
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          textPos,
+                          textColor,
+                          tabText);
+    }
+
+    return y + tabHeight;
+}
+
+float UIRenderer::DrawMiscTab(ImDrawList* drawList, const ImVec2& start, Trainer& trainer, const PlayerStats& stats) {
+    float y = start.y;
+
+    // Draw section header
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x, y),
+                      kAccentColorDim,
+                      "GENERAL FEATURES");
+    y += 22.0f;
+
+    // Draw feature toggles (filtered for misc features)
+    ImVec2 toggleStart(start.x, y);
+    y = DrawFeatureToggles(drawList, toggleStart);
+
+    // Draw player stats
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x, y),
+                      kAccentColorDim,
+                      "PLAYER STATS");
+    y += 22.0f;
+
+    ImVec2 statsStart(start.x, y);
+    y = DrawPlayerStats(drawList, statsStart, stats);
+
+    return y;
+}
+
+float UIRenderer::DrawAimbotTab(ImDrawList* drawList, const ImVec2& start, Trainer& trainer) {
+    float y = start.y;
+    ImGuiIO& io = ImGui::GetIO();
+    const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
+
+    // Find the aimbot toggle
+    int aimbotToggleIdx = -1;
+    for (size_t i = 0; i < featureToggles.size(); ++i) {
+        if (featureToggles[i].name == "Aimbot") {
+            aimbotToggleIdx = static_cast<int>(i);
+            break;
+        }
+    }
+
+    // Draw enable/disable toggle
+    if (aimbotToggleIdx >= 0) {
+        const bool isActive = featureToggles[aimbotToggleIdx].isActive();
+        ImVec2 minVec(start.x, y);
+        ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
+
+        bool isHovered = io.MousePos.x >= minVec.x && io.MousePos.x <= maxVec.x &&
+                        io.MousePos.y >= minVec.y && io.MousePos.y <= maxVec.y;
+
+        if (isHovered && ImGui::IsMouseClicked(0)) {
+            if (featureToggles[aimbotToggleIdx].onToggle) {
+                featureToggles[aimbotToggleIdx].onToggle();
+            }
+        }
+
+        // Draw button background
+        ImU32 bgColor = isHovered ? ColorU32(50, 55, 65) : ColorU32(40, 44, 50);
+        ImU32 borderColor = isActive ? kSuccessColor : (isHovered ? kAccentColor : ColorU32(60, 70, 85));
+
+        drawList->AddRectFilled(minVec, maxVec, bgColor, kCornerRadius);
+
+        if (isActive) {
+            drawList->AddRect(
+                ImVec2(minVec.x - 1, minVec.y - 1),
+                ImVec2(maxVec.x + 1, maxVec.y + 1),
+                IM_COL32(80, 220, 120, 100),
+                kCornerRadius + 1.0f, 0, 3.0f
+            );
+        }
+        drawList->AddRect(minVec, maxVec, borderColor, kCornerRadius, 0, isActive ? 2.5f : (isHovered ? 2.0f : 1.5f));
+
+        // Draw toggle switch
+        float switchWidth = 40.0f;
+        float switchHeight = 20.0f;
+        ImVec2 switchMin(maxVec.x - switchWidth - 12.0f, minVec.y + (kButtonHeight - switchHeight) * 0.5f);
+        ImVec2 switchMax(switchMin.x + switchWidth, switchMin.y + switchHeight);
+        ImU32 switchBg = isActive ? kSuccessColor : ColorU32(60, 65, 75);
+        drawList->AddRectFilled(switchMin, switchMax, switchBg, switchHeight * 0.5f);
+
+        float circleRadius = switchHeight * 0.4f;
+        float circleX = isActive ? (switchMax.x - circleRadius - 3.0f) : (switchMin.x + circleRadius + 3.0f);
+        float circleY = switchMin.y + switchHeight * 0.5f;
+        drawList->AddCircleFilled(ImVec2(circleX, circleY), circleRadius, ColorU32(255, 255, 255));
+
+        // Draw name
+        ImVec2 textPos(minVec.x + 14.0f, minVec.y + (kButtonHeight - 16.0f) * 0.5f);
+        ImU32 textColor = isActive ? ColorU32(220, 225, 230) : ColorU32(170, 175, 180);
+        drawList->AddText(textFont ? textFont : ImGui::GetFont(),
+                          textFont ? textFont->FontSize : ImGui::GetFontSize(),
+                          textPos,
+                          textColor,
+                          "Enable Aimbot");
+
+        y += kButtonHeight + 20.0f;
+    }
+
+    // Check if aimbot is enabled
+    if (!trainer.IsAimbotEnabled()) {
+        const char* msg = "Enable aimbot to configure settings";
+        ImVec2 msgSize = ImGui::CalcTextSize(msg);
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x + (panelWidth - panelPadding * 2 - msgSize.x) * 0.5f, y + 20.0f),
+                          ColorU32(150, 155, 160),
+                          msg);
+        return y + 80.0f;
+    }
+
+    // Draw aimbot settings
+    ImVec2 settingsStart(start.x, y);
+    y = DrawAimbotSettings(drawList, settingsStart, trainer);
+
+    return y;
+}
+
+float UIRenderer::DrawESPTab(ImDrawList* drawList, const ImVec2& start, Trainer& trainer) {
+    float y = start.y;
+    ImGuiIO& io = ImGui::GetIO();
+    const float buttonWidth = static_cast<float>(panelWidth - panelPadding * 2);
+
+    // Find the ESP toggle
+    int espToggleIdx = -1;
+    for (size_t i = 0; i < featureToggles.size(); ++i) {
+        if (featureToggles[i].name == "ESP / Wallhack") {
+            espToggleIdx = static_cast<int>(i);
+            break;
+        }
+    }
+
+    // Draw enable/disable toggle
+    if (espToggleIdx >= 0) {
+        const bool isActive = featureToggles[espToggleIdx].isActive();
+        ImVec2 minVec(start.x, y);
+        ImVec2 maxVec(start.x + buttonWidth, y + kButtonHeight);
+
+        bool isHovered = io.MousePos.x >= minVec.x && io.MousePos.x <= maxVec.x &&
+                        io.MousePos.y >= minVec.y && io.MousePos.y <= maxVec.y;
+
+        if (isHovered && ImGui::IsMouseClicked(0)) {
+            if (featureToggles[espToggleIdx].onToggle) {
+                featureToggles[espToggleIdx].onToggle();
+            }
+        }
+
+        // Draw button background
+        ImU32 bgColor = isHovered ? ColorU32(50, 55, 65) : ColorU32(40, 44, 50);
+        ImU32 borderColor = isActive ? kSuccessColor : (isHovered ? kAccentColor : ColorU32(60, 70, 85));
+
+        drawList->AddRectFilled(minVec, maxVec, bgColor, kCornerRadius);
+
+        if (isActive) {
+            drawList->AddRect(
+                ImVec2(minVec.x - 1, minVec.y - 1),
+                ImVec2(maxVec.x + 1, maxVec.y + 1),
+                IM_COL32(80, 220, 120, 100),
+                kCornerRadius + 1.0f, 0, 3.0f
+            );
+        }
+        drawList->AddRect(minVec, maxVec, borderColor, kCornerRadius, 0, isActive ? 2.5f : (isHovered ? 2.0f : 1.5f));
+
+        // Draw toggle switch
+        float switchWidth = 40.0f;
+        float switchHeight = 20.0f;
+        ImVec2 switchMin(maxVec.x - switchWidth - 12.0f, minVec.y + (kButtonHeight - switchHeight) * 0.5f);
+        ImVec2 switchMax(switchMin.x + switchWidth, switchMin.y + switchHeight);
+        ImU32 switchBg = isActive ? kSuccessColor : ColorU32(60, 65, 75);
+        drawList->AddRectFilled(switchMin, switchMax, switchBg, switchHeight * 0.5f);
+
+        float circleRadius = switchHeight * 0.4f;
+        float circleX = isActive ? (switchMax.x - circleRadius - 3.0f) : (switchMin.x + circleRadius + 3.0f);
+        float circleY = switchMin.y + switchHeight * 0.5f;
+        drawList->AddCircleFilled(ImVec2(circleX, circleY), circleRadius, ColorU32(255, 255, 255));
+
+        // Draw name
+        ImVec2 textPos(minVec.x + 14.0f, minVec.y + (kButtonHeight - 16.0f) * 0.5f);
+        ImU32 textColor = isActive ? ColorU32(220, 225, 230) : ColorU32(170, 175, 180);
+        drawList->AddText(textFont ? textFont : ImGui::GetFont(),
+                          textFont ? textFont->FontSize : ImGui::GetFontSize(),
+                          textPos,
+                          textColor,
+                          "Enable ESP");
+
+        y += kButtonHeight + 20.0f;
+    }
+
+    bool espEnabled = trainer.IsESPEnabled();
+
+    if (!espEnabled) {
+        const char* msg = "Enable ESP to see players through walls";
+        ImVec2 msgSize = ImGui::CalcTextSize(msg);
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x + (panelWidth - panelPadding * 2 - msgSize.x) * 0.5f, y + 20.0f),
+                          ColorU32(150, 155, 160),
+                          msg);
+        return y + 80.0f;
+    }
+
+    // ESP info
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x, y),
+                      ColorU32(180, 185, 190),
+                      "ESP Features:");
+    y += 20.0f;
+
+    const char* features[] = {
+        "- 2D Player Boxes",
+        "- Player Names",
+        "- Distance Indicators",
+        "- Snaplines to Players",
+        "- Color-Coded Distance"
+    };
+
+    for (const char* feature : features) {
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x + 10.0f, y),
+                          ColorU32(160, 165, 170),
+                          feature);
+        y += 18.0f;
+    }
+
+    y += 10.0f;
+
+    // Note about ESP
+    const char* note = "Note: ESP overlays are rendered in-game";
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x, y),
+                      kAccentColorDim,
+                      note);
+    y += 20.0f;
+
+    return y;
+}
+
 void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    const ImVec2 panelPos(24.0f, 24.0f);
+    ImGuiIO& io = ImGui::GetIO();
 
     const float headerHeight = 50.0f;
     const float hintHeight = 24.0f;
-    const float togglesHeight = static_cast<float>(featureToggles.size()) * (kButtonHeight + kButtonSpacing) + 6.0f;
-    const float statsHeight = 26.0f + (22.0f * 3.0f) + static_cast<float>(sectionSpacing);
-
-    // Calculate aimbot settings height (only if aimbot is enabled)
-    float aimbotHeight = 0.0f;
-    if (trainer.IsAimbotEnabled()) {
-        aimbotHeight = 22.0f + 28.0f + 12.0f + 18.0f + 20.0f + 12.0f;  // Header + mode toggle + smoothness
-        if (trainer.GetAimbotUseFOV()) {
-            aimbotHeight += 18.0f + 20.0f + 12.0f;  // FOV slider
-        }
-        aimbotHeight += static_cast<float>(sectionSpacing);
-    }
-
+    const float tabBarHeight = 32.0f;
     const float unloadHeight = kButtonHeight + 6.0f;
 
-    const float panelHeight = static_cast<float>(panelPadding) * 2.0f +
-                              headerHeight + hintHeight + togglesHeight + statsHeight + aimbotHeight + unloadHeight;
+    // Calculate content height based on active tab
+    float contentHeight = 0.0f;
+    switch (currentTab) {
+        case UITab::MISC: {
+            // Count only MISC toggles (exclude ESP and Aimbot)
+            int miscToggleCount = 0;
+            for (const auto& toggle : featureToggles) {
+                if (toggle.name != "ESP / Wallhack" && toggle.name != "Aimbot") {
+                    miscToggleCount++;
+                }
+            }
+            const float togglesHeight = static_cast<float>(miscToggleCount) * (kButtonHeight + kButtonSpacing) + 6.0f;
+            const float statsHeight = 26.0f + (22.0f * 3.0f) + static_cast<float>(sectionSpacing);
+            contentHeight = 22.0f + togglesHeight + 22.0f + statsHeight;
+            break;
+        }
+        case UITab::AIMBOT: {
+            // Toggle button + settings or message
+            contentHeight = kButtonHeight + 20.0f;  // Toggle button
+            if (trainer.IsAimbotEnabled()) {
+                contentHeight += 22.0f + 28.0f + 12.0f + 18.0f + 20.0f + 12.0f;  // Header + mode toggle + smoothness
+                if (trainer.GetAimbotUseFOV()) {
+                    contentHeight += 18.0f + 20.0f + 12.0f;  // FOV slider
+                }
+                contentHeight += static_cast<float>(sectionSpacing);
+            } else {
+                contentHeight += 100.0f;  // Message height
+            }
+            break;
+        }
+        case UITab::ESP: {
+            // Toggle button + info or message
+            contentHeight = kButtonHeight + 20.0f;  // Toggle button
+            if (trainer.IsESPEnabled()) {
+                contentHeight += 200.0f;  // ESP info display
+            } else {
+                contentHeight += 100.0f;  // Message height
+            }
+            break;
+        }
+    }
 
+    const float panelHeight = static_cast<float>(panelPadding) * 2.0f +
+                              headerHeight + hintHeight + tabBarHeight + contentHeight + unloadHeight;
+
+    // Handle drag-and-drop BEFORE drawing (so position updates immediately)
+    ImVec2 panelPos(panelPosX, panelPosY);
     ImVec2 panelMin = panelPos;
     ImVec2 panelMax(panelPos.x + static_cast<float>(panelWidth), panelPos.y + panelHeight);
+
+    const float dragAreaHeight = headerHeight;
+    ImVec2 dragAreaMin = panelMin;
+    ImVec2 dragAreaMax(panelMax.x, panelMin.y + dragAreaHeight);
+
+    bool isDragAreaHovered = io.MousePos.x >= dragAreaMin.x && io.MousePos.x <= dragAreaMax.x &&
+                             io.MousePos.y >= dragAreaMin.y && io.MousePos.y <= dragAreaMax.y;
+
+    // Start dragging when mouse is clicked in the header area
+    if (isDragAreaHovered && ImGui::IsMouseClicked(0)) {
+        isDragging = true;
+        dragOffsetX = io.MousePos.x - panelPosX;
+        dragOffsetY = io.MousePos.y - panelPosY;
+    }
+
+    // Stop dragging when mouse is released
+    if (!ImGui::IsMouseDown(0)) {
+        isDragging = false;
+    }
+
+    // Update panel position while dragging
+    if (isDragging) {
+        panelPosX = io.MousePos.x - dragOffsetX;
+        panelPosY = io.MousePos.y - dragOffsetY;
+
+        // Clamp to screen bounds
+        RECT clientRect;
+        if (GetClientRect(gameWindow, &clientRect)) {
+            float screenWidth = static_cast<float>(clientRect.right);
+            float screenHeight = static_cast<float>(clientRect.bottom);
+
+            // Keep at least 50px of the panel visible
+            const float minVisible = 50.0f;
+            if (panelPosX < -panelWidth + minVisible) panelPosX = -panelWidth + minVisible;
+            if (panelPosX > screenWidth - minVisible) panelPosX = screenWidth - minVisible;
+            if (panelPosY < 0.0f) panelPosY = 0.0f;
+            if (panelPosY > screenHeight - minVisible) panelPosY = screenHeight - minVisible;
+        }
+
+        // Recalculate positions after drag
+        panelPos = ImVec2(panelPosX, panelPosY);
+        panelMin = panelPos;
+        panelMax = ImVec2(panelPos.x + static_cast<float>(panelWidth), panelPos.y + panelHeight);
+        dragAreaMin = panelMin;
+        dragAreaMax = ImVec2(panelMax.x, panelMin.y + dragAreaHeight);
+    }
 
     // Modern panel with shadow effect
     ImVec2 shadowOffset(4.0f, 4.0f);
@@ -669,6 +1086,19 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
 
     // Accent border
     drawList->AddRect(panelMin, panelMax, kAccentColor, 12.0f, 0, 2.5f);
+
+    // Visual feedback: draw a drag cursor indicator when hovering over the header
+    if (isDragAreaHovered || isDragging) {
+        // Draw a subtle grab cursor hint
+        const char* dragHint = isDragging ? "[ DRAGGING ]" : "[ Drag Here ]";
+        ImVec2 hintSize = ImGui::CalcTextSize(dragHint);
+        ImVec2 hintPos(panelPos.x + (panelWidth - hintSize.x) * 0.5f, panelPos.y + 5.0f);
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          hintPos,
+                          isDragging ? kSuccessColor : kAccentColorDim,
+                          dragHint);
+    }
 
     float y = panelPos.y + static_cast<float>(panelPadding);
 
@@ -698,7 +1128,7 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     y += 20.0f;
 
     // Hint text
-    const char* hint = "Click to toggle | INSERT: Hide";
+    const char* hint = "Click tabs to switch | INSERT: Hide";
     drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
                       smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
                       ImVec2(panelPos.x + panelPadding, y),
@@ -706,17 +1136,29 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
                       hint);
     y += hintHeight;
 
+    // Draw tab bar
+    ImVec2 tabBarStart(panelPos.x, y);
+    y = DrawTabBar(drawList, tabBarStart, static_cast<float>(panelWidth));
+    y += 10.0f;  // Add some spacing after tab bar
+
+    // Draw content based on active tab
+    ImVec2 contentStart(panelPos.x + panelPadding, y);
+    switch (currentTab) {
+        case UITab::MISC:
+            y = DrawMiscTab(drawList, contentStart, trainer, stats);
+            break;
+        case UITab::AIMBOT:
+            y = DrawAimbotTab(drawList, contentStart, trainer);
+            break;
+        case UITab::ESP:
+            y = DrawESPTab(drawList, contentStart, trainer);
+            break;
+    }
+
+    y += 10.0f;  // Add spacing before unload button
+
+    // Draw unload button at bottom
     ImVec2 sectionStart(panelPos.x + panelPadding, y);
-    y = DrawFeatureToggles(drawList, sectionStart);
-
-    sectionStart = ImVec2(panelPos.x + panelPadding, y);
-    y = DrawPlayerStats(drawList, sectionStart, stats);
-
-    // Draw aimbot settings if aimbot is enabled
-    sectionStart = ImVec2(panelPos.x + panelPadding, y);
-    y = DrawAimbotSettings(drawList, sectionStart, trainer);
-
-    sectionStart = ImVec2(panelPos.x + panelPadding, y);
     bool unloadRequested = false;
     y = DrawUnloadButton(drawList, sectionStart, unloadRequested);
     
@@ -1019,8 +1461,8 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     transform.viewport[2] = screenWidth;
     transform.viewport[3] = screenHeight;
 
-    // ===== DEBUG PANEL - TOP LEFT (Still using ImGui for text) =====
-    int debugY = 10;
+    // ===== DEBUG PANEL - TOP LEFT (below HOOK ACTIVE box) =====
+    int debugY = 70;  // Start below the HOOK ACTIVE box (which ends at Y=60)
     const int debugLineHeight = 16;
 
     drawList->AddRectFilled(ImVec2(5, debugY - 2), ImVec2(400, debugY + 150), IM_COL32(0, 0, 0, 180));

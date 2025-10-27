@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cmake --build:*)"
+      "Bash(cmake --build:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File build_trainer.ps1)"
     ],
     "deny": [],
     "ask": []
