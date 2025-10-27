@@ -26,6 +26,13 @@ struct PlayerStats {
     int ammo;
 };
 
+// UI Tab enumeration
+enum class UITab {
+    MISC = 0,
+    AIMBOT = 1,
+    ESP = 2
+};
+
 class UIRenderer {
 private:
     HWND gameWindow;
@@ -52,6 +59,9 @@ private:
     float dragOffsetX;
     float dragOffsetY;
 
+    // Tab navigation
+    UITab currentTab;
+
     ImFont* headerFont;
     ImFont* textFont;
     ImFont* smallFont;
@@ -62,6 +72,10 @@ private:
     void UpdateMenuState();
     void UpdateNavigation(Trainer& trainer);
     void DrawMenu(const PlayerStats& stats, Trainer& trainer);
+    float DrawTabBar(struct ImDrawList* drawList, const struct ImVec2& start, float width);
+    float DrawMiscTab(struct ImDrawList* drawList, const struct ImVec2& start, Trainer& trainer, const PlayerStats& stats);
+    float DrawAimbotTab(struct ImDrawList* drawList, const struct ImVec2& start, Trainer& trainer);
+    float DrawESPTab(struct ImDrawList* drawList, const struct ImVec2& start, Trainer& trainer);
     float DrawFeatureToggles(struct ImDrawList* drawList, const struct ImVec2& start);
     float DrawPlayerStats(struct ImDrawList* drawList, const struct ImVec2& start, const PlayerStats& stats);
     float DrawAimbotSettings(struct ImDrawList* drawList, const struct ImVec2& start, Trainer& trainer);
