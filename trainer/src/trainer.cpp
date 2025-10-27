@@ -5,6 +5,21 @@
 #include "gl_hook.h"
 #include <iostream>
 #include <cmath>
+#include <algorithm>
+
+namespace TrainerInternal {
+float ReadClampedEyeHeight(uintptr_t playerPtr) {
+    if (!playerPtr) {
+        return 12.5f;
+    }
+
+    float eyeHeight = Memory::Read<float>(playerPtr + Trainer::OFFSET_EYE_HEIGHT);
+    if (!std::isfinite(static_cast<double>(eyeHeight)) || eyeHeight < 1.0f || eyeHeight > 150.0f) {
+        eyeHeight = 12.5f;
+    }
+    return std::clamp(eyeHeight, 4.0f, 32.0f);
+}
+}  // namespace TrainerInternal
 
 Trainer::Trainer(uintptr_t base)
     : moduleBase(base),
@@ -419,7 +434,9 @@ void Trainer::GetPlayerPosition(uintptr_t playerPtr, float& x, float& y, float& 
 
     x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
     y = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
-    z = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+    float baseZ = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+    float eyeHeight = TrainerInternal::ReadClampedEyeHeight(playerPtr);
+    z = baseZ - eyeHeight;
 }
 
 void Trainer::GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, float& z) {
@@ -431,7 +448,7 @@ void Trainer::GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, flo
     // Read feet position once so we can validate head data or fall back.
     const float feetX = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
     const float feetY = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
-    const float feetZ = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+    const float baseZ = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
 
     // Method 1: Use pre-calculated head position (updated by the game each frame).
     const float storedHeadX = Memory::Read<float>(playerPtr + OFFSET_HEAD_X);   // 0x3F8
@@ -441,6 +458,9 @@ void Trainer::GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, flo
     auto isFinite = [](float value) {
         return std::isfinite(static_cast<double>(value));
     };
+
+    float eyeHeight = TrainerInternal::ReadClampedEyeHeight(playerPtr);
+    const float feetZ = baseZ - eyeHeight;
 
     bool headValid = isFinite(storedHeadX) && isFinite(storedHeadY) && isFinite(storedHeadZ);
     if (headValid) {
@@ -467,14 +487,9 @@ void Trainer::GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, flo
 
     // Method 2 (Fallback): Calculate head position from feet + height when the cached
     // head values look suspicious (e.g. -1,-1,-1). This keeps ESP overlays aligned.
-    float playerHeight = Memory::Read<float>(playerPtr + OFFSET_PLAYER_HEIGHT);  // 0x38
-    if (!std::isfinite(static_cast<double>(playerHeight)) || playerHeight < 1.0f || playerHeight > 150.0f) {
-        playerHeight = 12.5f;  // Reasonable default height for standing players.
-    }
-
     x = feetX;
     y = feetY;
-    z = feetZ + playerHeight;
+    z = feetZ + eyeHeight;
 }
 
 void Trainer::GetPlayerName(uintptr_t playerPtr, char* name, size_t maxLen) {
@@ -496,7 +511,9 @@ void Trainer::GetLocalPlayerPosition(float& x, float& y, float& z) {
     
     x = Memory::Read<float>(playerBase + OFFSET_POS_X_ACTUAL);
     y = Memory::Read<float>(playerBase + OFFSET_POS_Y_ACTUAL);
-    z = Memory::Read<float>(playerBase + OFFSET_POS_Z_ACTUAL);
+    float baseZ = Memory::Read<float>(playerBase + OFFSET_POS_Z_ACTUAL);
+    float eyeHeight = TrainerInternal::ReadClampedEyeHeight(playerBase);
+    z = baseZ - eyeHeight;
 }
 
 void Trainer::GetLocalPlayerAngles(float& yaw, float& pitch) {

@@ -12,7 +12,7 @@ struct FeatureToggle;
 struct PlayerStats;
 
 class Trainer {
-   
+
 public:
     // Reads the view matrix from game memory
     void GetViewMatrix(float* outMatrix);
@@ -22,6 +22,13 @@ public:
 
     // Gets the combined view-projection matrix (modelview * projection)
     void GetViewProjectionMatrix(float* outMatrix);
+
+    // Static offsets - public so helper functions can access them
+    static constexpr uintptr_t OFFSET_EYE_HEIGHT = 0x50;       // Float: Eye height offset from feet
+    static constexpr uintptr_t OFFSET_HEAD_X = 0x3F8;          // Float: Pre-calculated head X position
+    static constexpr uintptr_t OFFSET_HEAD_Y = 0x3FC;          // Float: Pre-calculated head Y position
+    static constexpr uintptr_t OFFSET_HEAD_Z = 0x400;          // Float: Pre-calculated head Z position
+
 private:
     uintptr_t moduleBase;
     bool isRunning;
@@ -107,13 +114,6 @@ private:
     static constexpr uintptr_t OFFSET_VEL_Z = 0x18;  // Float: Velocity Z
     static constexpr uintptr_t OFFSET_MOVEMENT_SPEED = 0x44;  // Float: Movement speed multiplier
 
-    // Player height and head position (more accurate for ESP)
-    static constexpr uintptr_t OFFSET_PLAYER_HEIGHT = 0x38;    // Float: Current player height constant
-    static constexpr uintptr_t OFFSET_EYE_HEIGHT = 0x50;       // Float: Eye height offset from feet (old method)
-    static constexpr uintptr_t OFFSET_HEAD_X = 0x3F8;          // Float: Pre-calculated head X position
-    static constexpr uintptr_t OFFSET_HEAD_Y = 0x3FC;          // Float: Pre-calculated head Y position
-    static constexpr uintptr_t OFFSET_HEAD_Z = 0x400;          // Float: Pre-calculated head Z position
-    
     // Ammo offsets
     static constexpr uintptr_t OFFSET_AR_AMMO = 0x140;
     static constexpr uintptr_t OFFSET_SMG_AMMO = 0x138;
