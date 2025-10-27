@@ -9,7 +9,7 @@
 | `0x0058AC0C` | `int` | **Entity Count** | Number of entities in the entity list |
 | `0x0057E0A8` | `int*` | **Spectator/Referenced Player** | Points to currently spectated or referenced player |
 | `0x0057E010` | `float[16]` | **View Matrix (Modelview)** | GL_MODELVIEW_MATRIX - 4x4 camera transformation (64 bytes: 0x0057E010-0x0057E04F) |
-| `0x0057E0B0` | `float[16]` | **Projection Matrix** | GL_PROJECTION_MATRIX - perspective projection (64 bytes: 0x0057E0B0-0x0057E0EF) |
+| `0x0057DFD0` | `float[16]` | **ViewProjection Matrix** | Pre-multiplied `projection × modelview` matrix the engine updates each frame (64 bytes: 0x0057DFD0-0x0057E00F) |
 | `0x0058ABF8` | `int` | **GameMode** | Current game mode (0=DM, 4=TDM, etc.) |
 | `0x0059086C` | `int*` | **SpawnPoints** | Array of spawn point structures |
 | `0x0056BC90` | `int` | **CurrentSpawnIndex** | Current spawn point index |

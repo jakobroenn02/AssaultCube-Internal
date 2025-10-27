@@ -67,7 +67,7 @@ private:
     static constexpr uintptr_t OFFSET_CAMERA_PTR = 0x0017E0A8;   // Absolute: 0x0057E0A8 - Camera/view pointer (same as local player)
     static constexpr uintptr_t OFFSET_ENTITY_LIST = 0x0018AC04;   // Absolute: 0x0058AC04
     static constexpr uintptr_t OFFSET_VIEW_MATRIX = 0x0017E010;   // Absolute: 0x0057E010 - GL_MODELVIEW_MATRIX (column-major: rotation + translation)
-    static constexpr uintptr_t OFFSET_PROJECTION_MATRIX = 0x0017E0B0;  // Absolute: 0x0057E0B0 - GL_PROJECTION_MATRIX (64 bytes)
+    static constexpr uintptr_t OFFSET_VIEWPROJECTION_MATRIX = 0x0017DFD0;  // Absolute: 0x0057DFD0 - Pre-multiplied projection * modelview (64 bytes)
     static constexpr uintptr_t OFFSET_PLAYER_COUNT = 0x0018AC0C;  // Absolute: 0x0058AC0C
     
     // Camera structure offsets (from camera pointer at 0x0057E0A8)

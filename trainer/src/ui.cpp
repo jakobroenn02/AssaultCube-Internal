@@ -977,8 +977,9 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         }
     }
 
+    double modelviewCopy[16];
     for (int i = 0; i < 16; ++i) {
-        transform.modelview[i] = static_cast<double>(viewMatrixF[i]);
+        modelviewCopy[i] = static_cast<double>(viewMatrixF[i]);
     }
 
     float projectionMatrixF[16] = {0.0f};
@@ -991,13 +992,25 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         }
     }
 
-    if (hasCapturedView && projectionValid) {
+    bool usingCombinedMatrix = false;
+    if (projectionValid) {
+        usingCombinedMatrix = true;
         for (int i = 0; i < 16; ++i) {
             transform.projection[i] = static_cast<double>(projectionMatrixF[i]);
         }
     } else {
         for (int i = 0; i < 16; ++i) {
             transform.projection[i] = (i % 5 == 0) ? 1.0 : 0.0;
+        }
+    }
+
+    if (usingCombinedMatrix) {
+        for (int i = 0; i < 16; ++i) {
+            transform.modelview[i] = (i % 5 == 0) ? 1.0 : 0.0;
+        }
+    } else {
+        for (int i = 0; i < 16; ++i) {
+            transform.modelview[i] = modelviewCopy[i];
         }
     }
 
@@ -1020,15 +1033,12 @@ void UIRenderer::RenderESP(Trainer& trainer) {
 
     char matrixDebug[256];
     snprintf(matrixDebug, sizeof(matrixDebug), "ModelView[0,5,10,15]=%.2f %.2f %.2f %.2f",
-             static_cast<float>(transform.modelview[0]),
-             static_cast<float>(transform.modelview[5]),
-             static_cast<float>(transform.modelview[10]),
-             static_cast<float>(transform.modelview[15]));
+             viewMatrixF[0], viewMatrixF[5], viewMatrixF[10], viewMatrixF[15]);
     drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
     debugY += debugLineHeight;
 
-    snprintf(matrixDebug, sizeof(matrixDebug), "Projection valid: %s",
-             (hasCapturedView && projectionValid) ? "YES" : "Identity fallback");
+    snprintf(matrixDebug, sizeof(matrixDebug), "Projection source: %s",
+             projectionValid ? "Combined VP (0x0057DFD0)" : "Identity fallback");
     drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
     debugY += debugLineHeight;
 

@@ -4,6 +4,7 @@
 #include "memory.h"
 #include "gl_hook.h"
 #include <iostream>
+#include <cmath>
 
 Trainer::Trainer(uintptr_t base)
     : moduleBase(base),
@@ -427,22 +428,53 @@ void Trainer::GetPlayerHeadPosition(uintptr_t playerPtr, float& x, float& y, flo
         return;
     }
 
-    // Method 1: Read pre-calculated head position (updated by game during rendering)
-    // This is the most accurate method as the game maintains these values
-    x = Memory::Read<float>(playerPtr + OFFSET_HEAD_X);  // 0x3F8
-    y = Memory::Read<float>(playerPtr + OFFSET_HEAD_Y);  // 0x3FC
-    z = Memory::Read<float>(playerPtr + OFFSET_HEAD_Z);  // 0x400
+    // Read feet position once so we can validate head data or fall back.
+    const float feetX = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
+    const float feetY = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
+    const float feetZ = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
 
-    // Sanity check: if head position seems invalid, fall back to calculation method
-    if (x < -10000.0f || x > 10000.0f || y < -10000.0f || y > 10000.0f) {
-        // Method 2 (Fallback): Calculate head position from feet + height
-        x = Memory::Read<float>(playerPtr + OFFSET_POS_X_ACTUAL);
-        y = Memory::Read<float>(playerPtr + OFFSET_POS_Y_ACTUAL);
-        z = Memory::Read<float>(playerPtr + OFFSET_POS_Z_ACTUAL);
+    // Method 1: Use pre-calculated head position (updated by the game each frame).
+    const float storedHeadX = Memory::Read<float>(playerPtr + OFFSET_HEAD_X);   // 0x3F8
+    const float storedHeadY = Memory::Read<float>(playerPtr + OFFSET_HEAD_Y);   // 0x3FC
+    const float storedHeadZ = Memory::Read<float>(playerPtr + OFFSET_HEAD_Z);   // 0x400
 
-        float playerHeight = Memory::Read<float>(playerPtr + OFFSET_PLAYER_HEIGHT);  // 0x38
-        z += playerHeight;
+    auto isFinite = [](float value) {
+        return std::isfinite(static_cast<double>(value));
+    };
+
+    bool headValid = isFinite(storedHeadX) && isFinite(storedHeadY) && isFinite(storedHeadZ);
+    if (headValid) {
+        const float dx = std::fabs(storedHeadX - feetX);
+        const float dy = std::fabs(storedHeadY - feetY);
+        const float dz = storedHeadZ - feetZ;
+
+        // In AssaultCube the head is always near the feet in X/Y, and higher on Z.
+        // Some builds expose sentinel values (-1 or 0) when the render cache misses;
+        // treat those as invalid so we can fall back gracefully.
+        if (dx > 50.0f || dy > 50.0f || dz < 0.1f || dz > 150.0f ||
+            (std::fabs(storedHeadX) < 1e-3f && std::fabs(storedHeadY) < 1e-3f && std::fabs(storedHeadZ) < 1e-3f) ||
+            (std::fabs(storedHeadX + 1.0f) < 0.25f && std::fabs(storedHeadY + 1.0f) < 0.25f && std::fabs(storedHeadZ + 1.0f) < 0.25f)) {
+            headValid = false;
+        }
     }
+
+    if (headValid) {
+        x = storedHeadX;
+        y = storedHeadY;
+        z = storedHeadZ;
+        return;
+    }
+
+    // Method 2 (Fallback): Calculate head position from feet + height when the cached
+    // head values look suspicious (e.g. -1,-1,-1). This keeps ESP overlays aligned.
+    float playerHeight = Memory::Read<float>(playerPtr + OFFSET_PLAYER_HEIGHT);  // 0x38
+    if (!std::isfinite(static_cast<double>(playerHeight)) || playerHeight < 1.0f || playerHeight > 150.0f) {
+        playerHeight = 12.5f;  // Reasonable default height for standing players.
+    }
+
+    x = feetX;
+    y = feetY;
+    z = feetZ + playerHeight;
 }
 
 void Trainer::GetPlayerName(uintptr_t playerPtr, char* name, size_t maxLen) {
@@ -753,9 +785,9 @@ void Trainer::GetViewMatrix(float* outMatrix) {
     }
 }
 
-// Get the projection matrix from game memory
+// Get the combined view-projection matrix from game memory
 void Trainer::GetProjectionMatrix(float* outMatrix) {
-    uintptr_t matrixAddr = moduleBase + OFFSET_PROJECTION_MATRIX;
+    uintptr_t matrixAddr = moduleBase + OFFSET_VIEWPROJECTION_MATRIX;
     for (int i = 0; i < 16; ++i) {
         outMatrix[i] = Memory::Read<float>(matrixAddr + i * sizeof(float));
     }
