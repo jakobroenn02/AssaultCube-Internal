@@ -203,6 +203,8 @@ public:
     void GetLocalPlayerAngles(float& yaw, float& pitch);
 
     // Aimbot helper functions
+    bool IsTargetLikelyVisible(float localX, float localY, float localZ,
+                                float targetX, float targetY, float targetZ);
     uintptr_t FindClosestEnemy(float& outDistance);
     uintptr_t FindClosestEnemyToCrosshair(float& outFOV);
     void CalculateAngles(const float* from, const float* to, float& yaw, float& pitch);

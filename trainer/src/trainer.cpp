@@ -848,6 +848,45 @@ void Trainer::GetViewProjectionMatrix(float* outMatrix) {
 // ========== AIMBOT IMPLEMENTATION ==========
 // Educational: This demonstrates how aimbots work in 3D games
 
+// Check if target is likely visible (not through walls)
+// This is a simple heuristic based on height difference and angle
+bool Trainer::IsTargetLikelyVisible(float localX, float localY, float localZ,
+                                      float targetX, float targetY, float targetZ) {
+    // Calculate distance components
+    float dx = targetX - localX;
+    float dy = targetY - localY;
+    float dz = targetZ - localZ;
+
+    float horizontalDist = sqrt(dx * dx + dy * dy);
+    float totalDist = sqrt(dx * dx + dy * dy + dz * dz);
+
+    // Skip targets that are too close (might cause weird angles)
+    if (totalDist < 5.0f) {
+        return false;
+    }
+
+    // Calculate vertical angle to target
+    float verticalAngle = atan2(fabs(dz), horizontalDist) * (180.0f / 3.14159265f);
+
+    // If the target is at a steep vertical angle, they're likely on a different floor
+    // Typical player height in AssaultCube is around 15 units
+    // If height difference is more than 20 units and angle is steep, likely through floor/ceiling
+    const float maxHeightDiff = 20.0f;  // Max height difference for same floor
+    const float maxVerticalAngle = 35.0f;  // Max vertical angle (degrees)
+
+    if (fabs(dz) > maxHeightDiff && verticalAngle > maxVerticalAngle) {
+        return false;  // Target is on a different floor with steep angle
+    }
+
+    // Additional check: if horizontal distance is small but vertical is large,
+    // likely directly above/below through floor
+    if (horizontalDist < 30.0f && fabs(dz) > 25.0f) {
+        return false;  // Target is directly above/below through floor
+    }
+
+    return true;
+}
+
 // Find the closest enemy player to aim at
 uintptr_t Trainer::FindClosestEnemy(float& outDistance) {
     if (!playerBase) {
@@ -858,6 +897,7 @@ uintptr_t Trainer::FindClosestEnemy(float& outDistance) {
     // Get local player position
     float localX, localY, localZ;
     GetLocalPlayerPosition(localX, localY, localZ);
+    localZ += 10.0f;  // Adjust to eye level for better visibility checks
 
     // Get local player team
     int localTeam = Memory::Read<int>(playerBase + OFFSET_TEAM_ID);
@@ -887,12 +927,18 @@ uintptr_t Trainer::FindClosestEnemy(float& outDistance) {
         // Get enemy position
         float enemyX, enemyY, enemyZ;
         GetPlayerPosition(playerPtr, enemyX, enemyY, enemyZ);
+        enemyZ += 10.0f;  // Adjust to target's head level
 
         // Calculate 3D distance
         float dx = enemyX - localX;
         float dy = enemyY - localY;
         float dz = enemyZ - localZ;
         float distance = sqrt(dx * dx + dy * dy + dz * dz);
+
+        // Check if target is likely visible (not through walls/floors)
+        if (!IsTargetLikelyVisible(localX, localY, localZ, enemyX, enemyY, enemyZ)) {
+            continue;  // Skip targets that are likely behind walls
+        }
 
         // Track closest enemy
         if (distance < closestDistance) {
@@ -971,6 +1017,11 @@ uintptr_t Trainer::FindClosestEnemyToCrosshair(float& outFOV) {
         return 0;
     }
 
+    // Get local player position for visibility checks
+    float localX, localY, localZ;
+    GetLocalPlayerPosition(localX, localY, localZ);
+    localZ += 10.0f;  // Adjust to eye level
+
     // Get local player team
     int localTeam = Memory::Read<int>(playerBase + OFFSET_TEAM_ID);
 
@@ -995,6 +1046,16 @@ uintptr_t Trainer::FindClosestEnemyToCrosshair(float& outFOV) {
         int playerTeam = GetPlayerTeam(playerPtr);
         if (playerTeam == localTeam) {
             continue;
+        }
+
+        // Get target position for visibility check
+        float targetX, targetY, targetZ;
+        GetPlayerPosition(playerPtr, targetX, targetY, targetZ);
+        targetZ += 10.0f;  // Adjust to target's head level
+
+        // Check if target is likely visible (not through walls/floors)
+        if (!IsTargetLikelyVisible(localX, localY, localZ, targetX, targetY, targetZ)) {
+            continue;  // Skip targets that are likely behind walls
         }
 
         // Calculate FOV to this target
