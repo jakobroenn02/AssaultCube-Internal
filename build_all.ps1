@@ -58,7 +58,7 @@ try {
     
     # Build the DLL (including ui.cpp for overlay support)
     Write-Host "  Compiling C++ files..." -ForegroundColor DarkGray
-    $buildCmd = "`"$vcvars`" && cd build && cl.exe /LD /MT /std:c++17 /EHsc /I..\include /I..\third_party\imgui /I..\third_party\minhook\include ..\src\dllmain.cpp ..\src\trainer.cpp ..\src\ui.cpp ..\src\gl_hook.cpp ..\src\cursor_hook.cpp ..\src\render_utils.cpp ..\src\pch.cpp ..\third_party\imgui\imgui.cpp ..\third_party\imgui\imgui_draw.cpp ..\third_party\imgui\imgui_tables.cpp ..\third_party\imgui\imgui_widgets.cpp ..\third_party\imgui\imgui_impl_opengl3.cpp ..\third_party\imgui\imgui_impl_win32.cpp ..\third_party\minhook\src\buffer.c ..\third_party\minhook\src\hook.c ..\third_party\minhook\src\trampoline.c ..\third_party\minhook\src\hde\hde32.c psapi.lib user32.lib gdi32.lib opengl32.lib /link /OUT:actrainer.dll"
+    $buildCmd = "`"$vcvars`" && cd build && cl.exe /LD /MT /std:c++17 /EHsc /I..\include /I..\third_party\imgui /I..\third_party\minhook\include ..\src\dllmain.cpp ..\src\trainer.cpp ..\src\aimbot.cpp ..\src\ui.cpp ..\src\gl_hook.cpp ..\src\cursor_hook.cpp ..\src\render_utils.cpp ..\src\pch.cpp ..\third_party\imgui\imgui.cpp ..\third_party\imgui\imgui_draw.cpp ..\third_party\imgui\imgui_tables.cpp ..\third_party\imgui\imgui_widgets.cpp ..\third_party\imgui\imgui_impl_opengl3.cpp ..\third_party\imgui\imgui_impl_win32.cpp ..\third_party\minhook\src\buffer.c ..\third_party\minhook\src\hook.c ..\third_party\minhook\src\trampoline.c ..\third_party\minhook\src\hde\hde32.c psapi.lib user32.lib gdi32.lib opengl32.lib /link /OUT:actrainer.dll"
     
     cmd /c $buildCmd 2>&1 | Out-Null
     

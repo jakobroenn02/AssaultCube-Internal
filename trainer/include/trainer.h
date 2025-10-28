@@ -202,14 +202,7 @@ public:
     void GetLocalPlayerPosition(float& x, float& y, float& z);
     void GetLocalPlayerAngles(float& yaw, float& pitch);
 
-    // Aimbot helper functions
-    bool IsTargetLikelyVisible(float localX, float localY, float localZ,
-                                float targetX, float targetY, float targetZ);
-    uintptr_t FindClosestEnemy(float& outDistance);
-    uintptr_t FindClosestEnemyToCrosshair(float& outFOV);
-    void CalculateAngles(const float* from, const float* to, float& yaw, float& pitch);
-    float CalculateFOVToTarget(uintptr_t targetPtr);
-    void SmoothAim(float targetYaw, float targetPitch);
+    // Aimbot wrapper functions (delegates to Aimbot namespace)
     void UpdateAimbot();
 
     // Aimbot settings accessors
