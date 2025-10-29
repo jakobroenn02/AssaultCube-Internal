@@ -55,47 +55,55 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
                   << " GridShift: " << (int)gridShift
                   << " MapSize: " << mapSize << std::endl;
 
-        // Calculate midpoint
-        float midX = (x1 + x2) * 0.5f;
-        float midY = (y1 + y2) * 0.5f;
-        float midZ = (z1 + z2) * 0.5f;
-
-        // World coordinates ARE grid coordinates - just convert to int
-        int gx = (int)midX;
-        int gy = (int)midY;
-
         std::cout << "[LOS] Positions: Local(" << x1 << "," << y1 << "," << z1
                   << ") Target(" << x2 << "," << y2 << "," << z2 << ")" << std::endl;
-        std::cout << "[LOS] Midpoint: (" << midX << ", " << midY << ", " << midZ << ")" << std::endl;
-        std::cout << "[LOS] Grid: (" << gx << ", " << gy << ")" << std::endl;
 
-        // Bounds check
-        if (gx < 0 || gy < 0 || gx >= mapSize || gy >= mapSize) {
-            std::cout << "[LOS] Out of bounds" << std::endl;
-            return true;
-        }
+        // Check multiple points along the ray (not just midpoint)
+        // This catches walls that aren't exactly at the center
+        const int numChecks = 5; // Check 5 points along the line
+        for (int i = 0; i < numChecks; i++) {
+            float t = (i + 1.0f) / (numChecks + 1.0f); // Interpolation factor (skip endpoints)
+            float checkX = x1 + (x2 - x1) * t;
+            float checkY = y1 + (y2 - y1) * t;
+            float checkZ = z1 + (z2 - z1) * t;
 
-        // Calculate index: (GridY << gridShift) + GridX
-        int index = (gy << gridShift) + gx;
-        std::cout << "[LOS] Index: " << index << " (calc: " << gy << "<<" << (int)gridShift << "+" << gx << ")" << std::endl;
+            // World coordinates ARE grid coordinates - just convert to int
+            int gx = (int)checkX;
+            int gy = (int)checkY;
 
-        // Read cube data
-        byte cubeType = Memory::Read<byte>(mapData + index * 0x10);
-        std::cout << "[LOS] CubeType: " << (int)cubeType << std::endl;
+            if (i == numChecks / 2) { // Log the middle check point
+                std::cout << "[LOS] Check point " << i << ": (" << checkX << ", " << checkY << ", " << checkZ << ")" << std::endl;
+                std::cout << "[LOS] Grid: (" << gx << ", " << gy << ")" << std::endl;
+            }
 
-        if (cubeType != 0) { // Non-zero = some kind of geometry
-            char floor = Memory::Read<char>(mapData + index * 0x10 + 1);
-            char ceiling = Memory::Read<char>(mapData + index * 0x10 + 2);
+            // Bounds check
+            if (gx < 0 || gy < 0 || gx >= mapSize || gy >= mapSize) {
+                if (i == numChecks / 2) std::cout << "[LOS] Out of bounds" << std::endl;
+                continue; // Skip this check point
+            }
 
-            std::cout << "[LOS] Geometry! Type=" << (int)cubeType
-                      << " Floor=" << (int)floor
-                      << " Ceil=" << (int)ceiling
-                      << " MidZ=" << midZ << std::endl;
+            // Calculate index: (GridY << gridShift) + GridX
+            int index = (gy << gridShift) + gx;
 
-            // Check multiple cube types that could be solid
-            if (cubeType == 1 || cubeType == 2) { // Type 1 or 2 = solid
-                if (midZ >= floor && midZ <= ceiling) {
-                    std::cout << "[LOS] *** BLOCKED BY WALL ***" << std::endl;
+            // Read cube data
+            byte cubeType = Memory::Read<byte>(mapData + index * 0x10);
+
+            // Cube types (from AssaultCube source code world.h):
+            // 0 = SOLID - entirely solid cube (full wall)
+            // 1 = CORNER - half full corner wall (diagonal)
+            // 2 = FHF - floor heightfield
+            // 3 = CHF - ceiling heightfield
+            if (cubeType >= 0 && cubeType <= 3) { // Any geometry type can block line of sight
+                char floor = Memory::Read<char>(mapData + index * 0x10 + 1);
+                char ceiling = Memory::Read<char>(mapData + index * 0x10 + 2);
+
+                // Check if the ray passes through the solid geometry
+                // SOLID (0) blocks everything between floor and ceiling
+                // CORNER (1), FHF (2), CHF (3) also block if within their height range
+                if (checkZ >= floor && checkZ <= ceiling) {
+                    std::cout << "[LOS] *** BLOCKED BY WALL at check point " << i << " ***" << std::endl;
+                    std::cout << "[LOS] Type=" << (int)cubeType << " Floor=" << (int)floor
+                              << " Ceil=" << (int)ceiling << " CheckZ=" << checkZ << std::endl;
                     return false;
                 }
             }
