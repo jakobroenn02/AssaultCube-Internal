@@ -16,6 +16,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 set(SOURCES
     src/dllmain.cpp
     src/trainer.cpp
+    src/aimbot.cpp
     src/gl_hook.cpp
     src/render_utils.cpp
     src/ui.cpp
@@ -34,9 +35,11 @@ set(IMGUI_SOURCES
 # Header files
 set(HEADERS
     include/trainer.h
+    include/aimbot.h
     include/memory.h
     include/gl_hook.h
     include/render_utils.h
+    include/ui.h
     src/pch.h
 )
 

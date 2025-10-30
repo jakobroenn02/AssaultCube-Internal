@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(cmake --build:*)",
-      "Bash(powershell -ExecutionPolicy Bypass -File build_trainer.ps1)"
+      "Bash(powershell -ExecutionPolicy Bypass -File build_trainer.ps1)",
+      "Bash(timeout /t 3)",
+      "Bash(powershell -Command:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File rebuild_aimbot.ps1)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File build_all.ps1)",
+      "Read(//c/Users/jakob/Documents/GitHub/**)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File build_trainer.ps1)"
     ],
     "deny": [],
     "ask": []
