@@ -38,3 +38,4 @@ trainer/*.exe
 # Editor/IDE
 # .idea/
 .vscode/
+.claude/
