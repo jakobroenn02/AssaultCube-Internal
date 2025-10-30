@@ -1,6 +1,6 @@
 # Assault Cube Loader TUI
 
-A cross-platform Bubble Tea interface for authenticating users, validating local Assault Cube installs, and launching the Windows trainer DLL that ships with this repository. The loader is written in Go with MySQL persistence, while the `trainer/` directory contains the C++ game trainer that is injected once the game launches successfully.
+A Tui loader bundled with a DLL trainer. The loader is written in Go with MySQL persistence(disabled by default), while the `trainer/` directory contains the C++ game trainer that is injected once the game launches successfully.
 
 ## Key Features
 
