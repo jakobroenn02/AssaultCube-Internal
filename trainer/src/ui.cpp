@@ -421,6 +421,30 @@ float UIRenderer::DrawAimbotSettings(ImDrawList* drawList, const ImVec2& start, 
                       modeText);
     y += toggleHeight + 12.0f;
 
+    // Ignore Walls toggle button
+    bool ignoreWalls = trainer.GetAimbotIgnoreWalls();
+    const char* wallText = ignoreWalls ? "Walls: IGNORED" : "Walls: Blocked";
+
+    ImVec2 wallMin(start.x, y);
+    ImVec2 wallMax(start.x + barWidth, y + toggleHeight);
+    bool wallHovered = io.MousePos.x >= wallMin.x && io.MousePos.x <= wallMax.x &&
+                       io.MousePos.y >= wallMin.y && io.MousePos.y <= wallMax.y;
+
+    if (wallHovered && ImGui::IsMouseClicked(0)) {
+        trainer.SetAimbotIgnoreWalls(!ignoreWalls);
+    }
+
+    ImU32 wallBg = wallHovered ? ColorU32(50, 55, 65) : ColorU32(40, 44, 50);
+    drawList->AddRectFilled(wallMin, wallMax, wallBg, 6.0f);
+    drawList->AddRect(wallMin, wallMax, ignoreWalls ? kWarningColor : kSuccessColor, 6.0f, 0, 1.5f);
+
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x + 8.0f, y + 7.0f),
+                      ignoreWalls ? ColorU32(255, 200, 100) : ColorU32(100, 255, 150),
+                      wallText);
+    y += toggleHeight + 12.0f;
+
     // Smoothness slider
     float smoothness = trainer.GetAimbotSmoothness();
     drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
