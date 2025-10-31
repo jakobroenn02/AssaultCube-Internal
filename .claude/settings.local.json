@@ -8,7 +8,8 @@
       "Bash(powershell.exe -ExecutionPolicy Bypass -File rebuild_aimbot.ps1)",
       "Bash(powershell.exe -ExecutionPolicy Bypass -File build_all.ps1)",
       "Read(//c/Users/jakob/Documents/GitHub/**)",
-      "Bash(powershell.exe -ExecutionPolicy Bypass -File build_trainer.ps1)"
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File build_trainer.ps1)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

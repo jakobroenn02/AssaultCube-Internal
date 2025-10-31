@@ -37,6 +37,7 @@ Trainer::Trainer(uintptr_t base)
       aimbotSmoothness(3.0f),
       aimbotFOV(45.0f),
       aimbotUseFOV(false),
+      aimbotIgnoreWalls(false),  // Default: don't aim through walls
       recoilPatchAddress(0),
       recoilPatched(false),
       playerBase(0),

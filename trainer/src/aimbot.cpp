@@ -247,14 +247,16 @@ uintptr_t FindClosestEnemy(Trainer* trainer, float& outDistance) {
         float dz = enemyZ - localZ;
         float distance = sqrt(dx * dx + dy * dy + dz * dz);
 
-        // Wall detection check
-        if (!HasClearLineOfSight(playerBase, playerPtr)) {
-            continue;  // Blocked by wall/obstacle
-        }
+        // Wall detection check (only if not ignoring walls)
+        if (!trainer->GetAimbotIgnoreWalls()) {
+            if (!HasClearLineOfSight(playerBase, playerPtr)) {
+                continue;  // Blocked by wall/obstacle
+            }
 
-        // Second check: Heuristic fallback for vertical walls/floors
-        if (!IsTargetLikelyVisible(localX, localY, localZ, enemyX, enemyY, enemyZ)) {
-            continue;  // Skip targets that are likely behind walls
+            // Second check: Heuristic fallback for vertical walls/floors
+            if (!IsTargetLikelyVisible(localX, localY, localZ, enemyX, enemyY, enemyZ)) {
+                continue;  // Skip targets that are likely behind walls
+            }
         }
 
         // Track closest enemy
@@ -377,14 +379,17 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
         trainer->GetPlayerPosition(playerPtr, targetX, targetY, targetZ);
         targetZ += 10.0f;  // Adjust to target's head level
 
-        // First check: Use game's true line-of-sight function
-        if (!HasClearLineOfSight(playerBase, playerPtr)) {
-            continue;  // Blocked by wall/obstacle according to game engine
-        }
+        // Wall detection check (only if not ignoring walls)
+        if (!trainer->GetAimbotIgnoreWalls()) {
+            // First check: Use game's true line-of-sight function
+            if (!HasClearLineOfSight(playerBase, playerPtr)) {
+                continue;  // Blocked by wall/obstacle according to game engine
+            }
 
-        // Second check: Heuristic fallback for vertical walls/floors
-        if (!IsTargetLikelyVisible(localX, localY, localZ, targetX, targetY, targetZ)) {
-            continue;  // Skip targets that are likely behind walls
+            // Second check: Heuristic fallback for vertical walls/floors
+            if (!IsTargetLikelyVisible(localX, localY, localZ, targetX, targetY, targetZ)) {
+                continue;  // Skip targets that are likely behind walls
+            }
         }
 
         // Calculate FOV to this target

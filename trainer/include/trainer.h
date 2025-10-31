@@ -45,6 +45,7 @@ private:
     std::atomic<float> aimbotSmoothness;  // Aimbot smoothness (1.0 = instant, higher = smoother)
     std::atomic<float> aimbotFOV;  // FOV cone for aimbot (degrees)
     std::atomic<bool> aimbotUseFOV;  // True = aim at closest to crosshair, False = closest distance
+    std::atomic<bool> aimbotIgnoreWalls;  // True = aim through walls, False = only visible targets
     
     // Recoil patch data
     uintptr_t recoilPatchAddress;
@@ -212,6 +213,8 @@ public:
     void SetAimbotFOV(float value) { aimbotFOV.store(value); }
     bool GetAimbotUseFOV() const { return aimbotUseFOV.load(); }
     void SetAimbotUseFOV(bool value) { aimbotUseFOV.store(value); }
+    bool GetAimbotIgnoreWalls() const { return aimbotIgnoreWalls.load(); }
+    void SetAimbotIgnoreWalls(bool value) { aimbotIgnoreWalls.store(value); }
 
     // Accessors
     UIRenderer* GetUIRenderer() const { return uiRenderer; }
