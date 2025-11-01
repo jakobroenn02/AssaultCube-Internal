@@ -37,6 +37,9 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV);
 // Calculate aim angles from one position to another
 void CalculateAngles(const float* from, const float* to, float& yaw, float& pitch);
 
+// Predict target position based on velocity
+void PredictTargetPosition(uintptr_t targetPtr, float& targetX, float& targetY, float& targetZ, float predictionTime);
+
 // Calculate FOV angle to target
 float CalculateFOVToTarget(Trainer* trainer, uintptr_t targetPtr);
 
