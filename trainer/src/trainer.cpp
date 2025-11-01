@@ -38,6 +38,9 @@ Trainer::Trainer(uintptr_t base)
       aimbotFOV(45.0f),
       aimbotUseFOV(false),
       aimbotIgnoreWalls(false),  // Default: don't aim through walls
+      triggerbot(false),
+      triggerbotDelay(50.0f),  // 50ms default delay
+      triggerbotFOV(2.0f),  // 2 degree tolerance
       recoilPatchAddress(0),
       recoilPatched(false),
       playerBase(0),
@@ -162,6 +165,11 @@ void Trainer::Run() {
         // Update aimbot if active
         if (aimbot) {
             UpdateAimbot();
+        }
+
+        // Update triggerbot if active
+        if (triggerbot) {
+            UpdateTriggerbot();
         }
 
         // Sleep to reduce CPU usage
@@ -853,4 +861,9 @@ void Trainer::GetViewProjectionMatrix(float* outMatrix) {
 // Main aimbot update - wrapper that delegates to Aimbot namespace
 void Trainer::UpdateAimbot() {
     Aimbot::UpdateAimbot(this);
+}
+
+// Main triggerbot update - wrapper that delegates to Aimbot namespace
+void Trainer::UpdateTriggerbot() {
+    Aimbot::UpdateTriggerbot(this);
 }

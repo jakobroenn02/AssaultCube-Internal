@@ -46,6 +46,9 @@ private:
     std::atomic<float> aimbotFOV;  // FOV cone for aimbot (degrees)
     std::atomic<bool> aimbotUseFOV;  // True = aim at closest to crosshair, False = closest distance
     std::atomic<bool> aimbotIgnoreWalls;  // True = aim through walls, False = only visible targets
+    std::atomic<bool> triggerbot;  // Triggerbot feature (auto-shoot when crosshair on enemy)
+    std::atomic<float> triggerbotDelay;  // Delay before shooting (ms) for more human-like behavior
+    std::atomic<float> triggerbotFOV;  // FOV tolerance for triggerbot (degrees)
     
     // Recoil patch data
     uintptr_t recoilPatchAddress;
@@ -205,6 +208,7 @@ public:
 
     // Aimbot wrapper functions (delegates to Aimbot namespace)
     void UpdateAimbot();
+    void UpdateTriggerbot();
 
     // Aimbot settings accessors
     float GetAimbotSmoothness() const { return aimbotSmoothness.load(); }
@@ -215,6 +219,14 @@ public:
     void SetAimbotUseFOV(bool value) { aimbotUseFOV.store(value); }
     bool GetAimbotIgnoreWalls() const { return aimbotIgnoreWalls.load(); }
     void SetAimbotIgnoreWalls(bool value) { aimbotIgnoreWalls.store(value); }
+
+    // Triggerbot settings accessors
+    bool IsTriggerbotEnabled() const { return triggerbot.load(); }
+    void SetTriggerbotEnabled(bool value) { triggerbot.store(value); }
+    float GetTriggerbotDelay() const { return triggerbotDelay.load(); }
+    void SetTriggerbotDelay(float value) { triggerbotDelay.store(value); }
+    float GetTriggerbotFOV() const { return triggerbotFOV.load(); }
+    void SetTriggerbotFOV(float value) { triggerbotFOV.store(value); }
 
     // Accessors
     UIRenderer* GetUIRenderer() const { return uiRenderer; }
