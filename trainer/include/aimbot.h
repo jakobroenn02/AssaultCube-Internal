@@ -49,6 +49,12 @@ void SmoothAim(Trainer* trainer, float targetYaw, float targetPitch);
 // Main aimbot update function (called every frame)
 void UpdateAimbot(Trainer* trainer);
 
+// Triggerbot: Check if crosshair is on enemy and should shoot
+bool ShouldTriggerShoot(Trainer* trainer);
+
+// Triggerbot: Main update function (called every frame)
+void UpdateTriggerbot(Trainer* trainer);
+
 // Get/clear the LOS cache
 std::vector<LOSCache>& GetLOSCache();
 void ClearLOSCache();

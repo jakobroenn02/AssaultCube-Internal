@@ -606,4 +606,88 @@ void ClearLOSCache() {
     losCache.clear();
 }
 
+// Check if crosshair is on an enemy (within triggerbot FOV tolerance)
+bool ShouldTriggerShoot(Trainer* trainer) {
+    if (!trainer) return false;
+
+    // Get triggerbot FOV tolerance
+    float maxFOV = trainer->GetTriggerbotFOV();
+
+    // Find enemy closest to crosshair
+    float fov = 0.0f;
+    uintptr_t target = FindClosestEnemyToCrosshair(trainer, fov);
+
+    // Check if we found a valid target within FOV tolerance
+    if (!target || fov < 0.0f) {
+        return false;  // No target found
+    }
+
+    // Check if target is within triggerbot FOV tolerance
+    return (fov <= maxFOV);
+}
+
+// Main triggerbot update - called every frame when triggerbot is active
+void UpdateTriggerbot(Trainer* trainer) {
+    if (!trainer) return;
+
+    // Static variables for delay handling
+    static DWORD lastCheckTime = 0;
+    static bool targetAcquired = false;
+    static DWORD targetAcquiredTime = 0;
+
+    DWORD currentTime = GetTickCount();
+
+    // Check if we should shoot (crosshair on enemy)
+    bool shouldShoot = ShouldTriggerShoot(trainer);
+
+    if (shouldShoot) {
+        // Target is in crosshair
+        if (!targetAcquired) {
+            // Just acquired target - start delay timer
+            targetAcquired = true;
+            targetAcquiredTime = currentTime;
+        } else {
+            // Target still in crosshair - check if delay has passed
+            float delay = trainer->GetTriggerbotDelay();
+            DWORD elapsedTime = currentTime - targetAcquiredTime;
+
+            if (elapsedTime >= (DWORD)delay) {
+                // Delay passed - simulate mouse click (shoot)
+                uintptr_t acClientBase = 0;
+                size_t moduleSize = 0;
+                if (!Memory::GetModuleInfo("ac_client.exe", acClientBase, moduleSize)) return;
+
+                uintptr_t playerBase = Memory::Read<uintptr_t>(acClientBase + 0x0017E0A8);
+                if (!playerBase) return;
+
+                // Set auto-shoot flag (simulates holding mouse button)
+                // This is cleaner than simulating actual mouse input
+                Memory::Write<byte>(playerBase + 0x204, 1);
+
+                // Debug output
+                static int shootCount = 0;
+                if (shootCount++ % 10 == 0) {
+                    std::cout << "[TRIGGERBOT] Shooting! (delay: " << delay << "ms)" << std::endl;
+                }
+            }
+        }
+    } else {
+        // No target in crosshair
+        if (targetAcquired) {
+            // Lost target - reset delay timer
+            targetAcquired = false;
+
+            // Stop shooting
+            uintptr_t acClientBase = 0;
+            size_t moduleSize = 0;
+            if (Memory::GetModuleInfo("ac_client.exe", acClientBase, moduleSize)) {
+                uintptr_t playerBase = Memory::Read<uintptr_t>(acClientBase + 0x0017E0A8);
+                if (playerBase) {
+                    Memory::Write<byte>(playerBase + 0x204, 0);
+                }
+            }
+        }
+    }
+}
+
 } // namespace Aimbot
