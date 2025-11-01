@@ -39,3 +39,4 @@ trainer/*.exe
 # .idea/
 .vscode/
 .claude/
+.vscode/settings.json
