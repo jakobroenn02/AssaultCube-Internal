@@ -1,5 +1,6 @@
 {
     "files.associations": {
         "vector": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "C:/Users/jakob/Documents/GitHub/tuiapp/trainer"
 }
