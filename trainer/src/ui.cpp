@@ -1162,6 +1162,14 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
                 if (trainer.GetAimbotUseFOV()) {
                     contentHeight += 18.0f + 20.0f + 12.0f;  // FOV slider
                 }
+
+                // Triggerbot section
+                contentHeight += 10.0f + 22.0f + 28.0f + 12.0f;  // Spacing + header + toggle button
+                if (trainer.IsTriggerbotEnabled()) {
+                    contentHeight += 18.0f + 20.0f + 12.0f;  // Delay slider
+                    contentHeight += 18.0f + 20.0f + 12.0f;  // FOV tolerance slider
+                }
+
                 contentHeight += static_cast<float>(sectionSpacing);
             } else {
                 contentHeight += 100.0f;  // Message height
