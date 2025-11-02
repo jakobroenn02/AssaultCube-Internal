@@ -292,6 +292,20 @@ void CalculateAngles(const float* from, const float* to, float& yaw, float& pitc
     pitch = atan2(dz, horizontalDist) * (180.0f / 3.14159265f);
 }
 
+// Predict target position based on velocity (for moving targets)
+void PredictTargetPosition(uintptr_t targetPtr, float& targetX, float& targetY, float& targetZ, float predictionTime) {
+    // Read current velocity from target entity
+    float velX = Memory::Read<float>(targetPtr + 0x10);
+    float velY = Memory::Read<float>(targetPtr + 0x14);
+    float velZ = Memory::Read<float>(targetPtr + 0x18);
+
+    // Calculate predicted position: position + (velocity * time)
+    // predictionTime is typically 0.05-0.15 seconds (50-150ms)
+    targetX += velX * predictionTime;
+    targetY += velY * predictionTime;
+    targetZ += velZ * predictionTime;
+}
+
 // Calculate FOV (field of view) angle to a target
 // Returns the angle in degrees between crosshair and target
 float CalculateFOVToTarget(Trainer* trainer, uintptr_t targetPtr) {
@@ -411,7 +425,7 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
     return closestEnemy;
 }
 
-// Smoothly adjust aim toward target angles
+// Smoothly adjust aim toward target angles with exponential smoothing
 void SmoothAim(Trainer* trainer, float targetYaw, float targetPitch) {
     if (!trainer) return;
 
@@ -434,11 +448,22 @@ void SmoothAim(Trainer* trainer, float targetYaw, float targetPitch) {
     while (deltaYaw > 180.0f) deltaYaw -= 360.0f;
     while (deltaYaw < -180.0f) deltaYaw += 360.0f;
 
-    // Apply smoothing (higher smoothness = slower aim)
-    // smoothness of 1.0 = instant snap, 5.0 = very smooth
+    // Get smoothness setting
     float smoothness = trainer->GetAimbotSmoothness();
-    float newYaw = currentYaw + (deltaYaw / smoothness);
-    float newPitch = currentPitch + (deltaPitch / smoothness);
+
+    // Exponential smoothing: uses a smooth factor that creates natural easing
+    // Convert smoothness (1-10 range) to exponential factor (0.1-0.9 range)
+    // Lower factor = faster aim, higher factor = smoother aim
+    float expFactor = 1.0f - (1.0f / (smoothness + 1.0f));
+
+    // Apply exponential smoothing (creates natural acceleration/deceleration)
+    // Formula: newAngle = currentAngle + (targetDelta * (1 - expFactor))
+    float smoothYaw = deltaYaw * (1.0f - expFactor);
+    float smoothPitch = deltaPitch * (1.0f - expFactor);
+
+    // Calculate new angles
+    float newYaw = currentYaw + smoothYaw;
+    float newPitch = currentPitch + smoothPitch;
 
     // Clamp pitch to valid range (-90 to 90 degrees)
     if (newPitch > 90.0f) newPitch = 90.0f;
@@ -516,12 +541,25 @@ void UpdateAimbot(Trainer* trainer) {
     trainer->GetPlayerPosition(target, targetX, targetY, targetZ);
     targetZ += 10.0f;  // Aim at enemy head
 
+    // Calculate distance to target for prediction time scaling
+    float dx = targetX - localX;
+    float dy = targetY - localY;
+    float dz = targetZ - localZ;
+    float distance = sqrt(dx * dx + dy * dy + dz * dz);
+
+    // Apply velocity-based prediction
+    // Prediction time scales with distance (further = more prediction needed)
+    // Base prediction: ~100ms, scales up with distance
+    float predictionTime = 0.1f + (distance / 2000.0f);  // 0.1-0.35s range
+    PredictTargetPosition(target, targetX, targetY, targetZ, predictionTime);
+
     // DEBUG: Print positions AND raw memory values every 100 frames
     static int frameCount = 0;
     if (frameCount++ % 100 == 0) {
         std::cout << "[AIMBOT DEBUG]" << std::endl;
         std::cout << "  Local pos: (" << localX << ", " << localY << ", " << localZ << ")" << std::endl;
-        std::cout << "  Target pos: (" << targetX << ", " << targetY << ", " << targetZ << ")" << std::endl;
+        std::cout << "  Target pos (predicted): (" << targetX << ", " << targetY << ", " << targetZ << ")" << std::endl;
+        std::cout << "  Distance: " << distance << " Prediction time: " << predictionTime << "s" << std::endl;
 
         // VERIFY: Read raw position and velocity from target to check offsets
         float rawX = Memory::Read<float>(target + 0x04);
@@ -566,6 +604,90 @@ std::vector<LOSCache>& GetLOSCache() {
 // Clear the LOS cache
 void ClearLOSCache() {
     losCache.clear();
+}
+
+// Check if crosshair is on an enemy (within triggerbot FOV tolerance)
+bool ShouldTriggerShoot(Trainer* trainer) {
+    if (!trainer) return false;
+
+    // Get triggerbot FOV tolerance
+    float maxFOV = trainer->GetTriggerbotFOV();
+
+    // Find enemy closest to crosshair
+    float fov = 0.0f;
+    uintptr_t target = FindClosestEnemyToCrosshair(trainer, fov);
+
+    // Check if we found a valid target within FOV tolerance
+    if (!target || fov < 0.0f) {
+        return false;  // No target found
+    }
+
+    // Check if target is within triggerbot FOV tolerance
+    return (fov <= maxFOV);
+}
+
+// Main triggerbot update - called every frame when triggerbot is active
+void UpdateTriggerbot(Trainer* trainer) {
+    if (!trainer) return;
+
+    // Static variables for delay handling
+    static DWORD lastCheckTime = 0;
+    static bool targetAcquired = false;
+    static DWORD targetAcquiredTime = 0;
+
+    DWORD currentTime = GetTickCount();
+
+    // Check if we should shoot (crosshair on enemy)
+    bool shouldShoot = ShouldTriggerShoot(trainer);
+
+    if (shouldShoot) {
+        // Target is in crosshair
+        if (!targetAcquired) {
+            // Just acquired target - start delay timer
+            targetAcquired = true;
+            targetAcquiredTime = currentTime;
+        } else {
+            // Target still in crosshair - check if delay has passed
+            float delay = trainer->GetTriggerbotDelay();
+            DWORD elapsedTime = currentTime - targetAcquiredTime;
+
+            if (elapsedTime >= (DWORD)delay) {
+                // Delay passed - simulate mouse click (shoot)
+                uintptr_t acClientBase = 0;
+                size_t moduleSize = 0;
+                if (!Memory::GetModuleInfo("ac_client.exe", acClientBase, moduleSize)) return;
+
+                uintptr_t playerBase = Memory::Read<uintptr_t>(acClientBase + 0x0017E0A8);
+                if (!playerBase) return;
+
+                // Set auto-shoot flag (simulates holding mouse button)
+                // This is cleaner than simulating actual mouse input
+                Memory::Write<byte>(playerBase + 0x204, 1);
+
+                // Debug output
+                static int shootCount = 0;
+                if (shootCount++ % 10 == 0) {
+                    std::cout << "[TRIGGERBOT] Shooting! (delay: " << delay << "ms)" << std::endl;
+                }
+            }
+        }
+    } else {
+        // No target in crosshair
+        if (targetAcquired) {
+            // Lost target - reset delay timer
+            targetAcquired = false;
+
+            // Stop shooting
+            uintptr_t acClientBase = 0;
+            size_t moduleSize = 0;
+            if (Memory::GetModuleInfo("ac_client.exe", acClientBase, moduleSize)) {
+                uintptr_t playerBase = Memory::Read<uintptr_t>(acClientBase + 0x0017E0A8);
+                if (playerBase) {
+                    Memory::Write<byte>(playerBase + 0x204, 0);
+                }
+            }
+        }
+    }
 }
 
 } // namespace Aimbot

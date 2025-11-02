@@ -556,6 +556,147 @@ float UIRenderer::DrawAimbotSettings(ImDrawList* drawList, const ImVec2& start, 
         y += sliderHeight + 12.0f;
     }
 
+    // Triggerbot section header
+    y += 10.0f;
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x, y),
+                      kWarningColor,
+                      "TRIGGERBOT");
+    y += 22.0f;
+
+    // Triggerbot enable toggle
+    bool triggerbotEnabled = trainer.IsTriggerbotEnabled();
+    const char* triggerText = triggerbotEnabled ? "Triggerbot: ON" : "Triggerbot: OFF";
+
+    ImVec2 triggerMin(start.x, y);
+    ImVec2 triggerMax(start.x + barWidth, y + 28.0f);
+    bool triggerHovered = io.MousePos.x >= triggerMin.x && io.MousePos.x <= triggerMax.x &&
+                          io.MousePos.y >= triggerMin.y && io.MousePos.y <= triggerMax.y;
+
+    if (triggerHovered && ImGui::IsMouseClicked(0)) {
+        trainer.SetTriggerbotEnabled(!triggerbotEnabled);
+    }
+
+    ImU32 triggerBg = triggerHovered ? ColorU32(50, 55, 65) : ColorU32(40, 44, 50);
+    drawList->AddRectFilled(triggerMin, triggerMax, triggerBg, 6.0f);
+    drawList->AddRect(triggerMin, triggerMax, triggerbotEnabled ? kSuccessColor : ColorU32(100, 110, 120), 6.0f, 0, 1.5f);
+
+    drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                      smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                      ImVec2(start.x + 8.0f, y + 7.0f),
+                      triggerbotEnabled ? ColorU32(100, 255, 150) : ColorU32(200, 205, 210),
+                      triggerText);
+    y += 28.0f + 12.0f;
+
+    // Triggerbot settings (only show if enabled)
+    if (triggerbotEnabled) {
+        // Delay slider
+        float delay = trainer.GetTriggerbotDelay();
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x, y),
+                          ColorU32(180, 185, 190),
+                          "Delay");
+
+        char delayText[16];
+        snprintf(delayText, sizeof(delayText), "%.0fms", delay);
+        ImVec2 delaySize = ImGui::CalcTextSize(delayText);
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x + barWidth - delaySize.x, y),
+                          ColorU32(220, 225, 230),
+                          delayText);
+        y += 18.0f;
+
+        // Delay slider
+        const float sliderHeight = 20.0f;
+        ImVec2 delaySliderBg(start.x, y);
+        ImVec2 delaySliderBgMax(start.x + barWidth, y + sliderHeight);
+
+        bool delaySliderHovered = io.MousePos.x >= delaySliderBg.x && io.MousePos.x <= delaySliderBgMax.x &&
+                                  io.MousePos.y >= delaySliderBg.y && io.MousePos.y <= delaySliderBgMax.y;
+
+        static bool draggingDelay = false;
+        if (delaySliderHovered && ImGui::IsMouseDown(0)) {
+            draggingDelay = true;
+        }
+        if (!ImGui::IsMouseDown(0)) {
+            draggingDelay = false;
+        }
+
+        if (draggingDelay) {
+            float percent = (io.MousePos.x - delaySliderBg.x) / barWidth;
+            if (percent < 0.0f) percent = 0.0f;
+            if (percent > 1.0f) percent = 1.0f;
+            float newDelay = 0.0f + percent * 300.0f;  // Range: 0 to 300ms
+            trainer.SetTriggerbotDelay(newDelay);
+            delay = newDelay;
+        }
+
+        drawList->AddRectFilled(delaySliderBg, delaySliderBgMax, ColorU32(30, 33, 38), sliderHeight * 0.5f);
+
+        float delayPercent = delay / 300.0f;
+        ImVec2 delayFillMax(start.x + barWidth * delayPercent, y + sliderHeight);
+        drawList->AddRectFilled(delaySliderBg, delayFillMax, kWarningColor, sliderHeight * 0.5f);
+
+        float delayHandleX = start.x + barWidth * delayPercent;
+        drawList->AddCircleFilled(ImVec2(delayHandleX, y + sliderHeight * 0.5f), 8.0f, ColorU32(255, 255, 255));
+        y += sliderHeight + 12.0f;
+
+        // FOV tolerance slider
+        float triggerFOV = trainer.GetTriggerbotFOV();
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x, y),
+                          ColorU32(180, 185, 190),
+                          "FOV Tolerance");
+
+        char triggerFOVText[16];
+        snprintf(triggerFOVText, sizeof(triggerFOVText), "%.1f deg", triggerFOV);
+        ImVec2 triggerFOVSize = ImGui::CalcTextSize(triggerFOVText);
+        drawList->AddText(smallFont ? smallFont : ImGui::GetFont(),
+                          smallFont ? smallFont->FontSize : ImGui::GetFontSize(),
+                          ImVec2(start.x + barWidth - triggerFOVSize.x, y),
+                          ColorU32(220, 225, 230),
+                          triggerFOVText);
+        y += 18.0f;
+
+        // FOV tolerance slider
+        ImVec2 triggerFOVSliderBg(start.x, y);
+        ImVec2 triggerFOVSliderBgMax(start.x + barWidth, y + sliderHeight);
+
+        bool triggerFOVSliderHovered = io.MousePos.x >= triggerFOVSliderBg.x && io.MousePos.x <= triggerFOVSliderBgMax.x &&
+                                       io.MousePos.y >= triggerFOVSliderBg.y && io.MousePos.y <= triggerFOVSliderBgMax.y;
+
+        static bool draggingTriggerFOV = false;
+        if (triggerFOVSliderHovered && ImGui::IsMouseDown(0)) {
+            draggingTriggerFOV = true;
+        }
+        if (!ImGui::IsMouseDown(0)) {
+            draggingTriggerFOV = false;
+        }
+
+        if (draggingTriggerFOV) {
+            float percent = (io.MousePos.x - triggerFOVSliderBg.x) / barWidth;
+            if (percent < 0.0f) percent = 0.0f;
+            if (percent > 1.0f) percent = 1.0f;
+            float newTriggerFOV = 0.5f + percent * 9.5f;  // Range: 0.5 to 10 degrees
+            trainer.SetTriggerbotFOV(newTriggerFOV);
+            triggerFOV = newTriggerFOV;
+        }
+
+        drawList->AddRectFilled(triggerFOVSliderBg, triggerFOVSliderBgMax, ColorU32(30, 33, 38), sliderHeight * 0.5f);
+
+        float triggerFOVPercent = (triggerFOV - 0.5f) / 9.5f;
+        ImVec2 triggerFOVFillMax(start.x + barWidth * triggerFOVPercent, y + sliderHeight);
+        drawList->AddRectFilled(triggerFOVSliderBg, triggerFOVFillMax, kWarningColor, sliderHeight * 0.5f);
+
+        float triggerFOVHandleX = start.x + barWidth * triggerFOVPercent;
+        drawList->AddCircleFilled(ImVec2(triggerFOVHandleX, y + sliderHeight * 0.5f), 8.0f, ColorU32(255, 255, 255));
+        y += sliderHeight + 12.0f;
+    }
+
     return y + sectionSpacing;
 }
 
@@ -1010,7 +1151,7 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
             }
             const float togglesHeight = static_cast<float>(miscToggleCount) * (kButtonHeight + kButtonSpacing) + 6.0f;
             const float statsHeight = 26.0f + (22.0f * 3.0f) + static_cast<float>(sectionSpacing);
-            contentHeight = 22.0f + togglesHeight + 22.0f + statsHeight;
+            contentHeight = 22.0f + togglesHeight + 22.0f + statsHeight + 10.0f + unloadHeight;
             break;
         }
         case UITab::AIMBOT: {
@@ -1021,6 +1162,14 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
                 if (trainer.GetAimbotUseFOV()) {
                     contentHeight += 18.0f + 20.0f + 12.0f;  // FOV slider
                 }
+
+                // Triggerbot section
+                contentHeight += 10.0f + 22.0f + 28.0f + 12.0f;  // Spacing + header + toggle button
+                if (trainer.IsTriggerbotEnabled()) {
+                    contentHeight += 18.0f + 20.0f + 12.0f;  // Delay slider
+                    contentHeight += 18.0f + 20.0f + 12.0f;  // FOV tolerance slider
+                }
+
                 contentHeight += static_cast<float>(sectionSpacing);
             } else {
                 contentHeight += 100.0f;  // Message height
@@ -1040,7 +1189,7 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     }
 
     const float panelHeight = static_cast<float>(panelPadding) * 2.0f +
-                              headerHeight + hintHeight + tabBarHeight + contentHeight + unloadHeight;
+                              headerHeight + hintHeight + tabBarHeight + contentHeight;
 
     // Handle drag-and-drop BEFORE drawing (so position updates immediately)
     ImVec2 panelPos(panelPosX, panelPosY);
@@ -1168,26 +1317,26 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     // Draw content based on active tab
     ImVec2 contentStart(panelPos.x + panelPadding, y);
     switch (currentTab) {
-        case UITab::MISC:
+        case UITab::MISC: {
             y = DrawMiscTab(drawList, contentStart, trainer, stats);
+
+            // Draw unload button at bottom (only on MISC tab)
+            y += 10.0f;  // Add spacing before unload button
+            ImVec2 sectionStart(panelPos.x + panelPadding, y);
+            bool unloadRequested = false;
+            y = DrawUnloadButton(drawList, sectionStart, unloadRequested);
+
+            if (unloadRequested) {
+                unloadRequestPending = true;
+            }
             break;
+        }
         case UITab::AIMBOT:
             y = DrawAimbotTab(drawList, contentStart, trainer);
             break;
         case UITab::ESP:
             y = DrawESPTab(drawList, contentStart, trainer);
             break;
-    }
-
-    y += 10.0f;  // Add spacing before unload button
-
-    // Draw unload button at bottom
-    ImVec2 sectionStart(panelPos.x + panelPadding, y);
-    bool unloadRequested = false;
-    y = DrawUnloadButton(drawList, sectionStart, unloadRequested);
-    
-    if (unloadRequested) {
-        unloadRequestPending = true;
     }
 }
 

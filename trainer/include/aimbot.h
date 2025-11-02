@@ -37,6 +37,9 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV);
 // Calculate aim angles from one position to another
 void CalculateAngles(const float* from, const float* to, float& yaw, float& pitch);
 
+// Predict target position based on velocity
+void PredictTargetPosition(uintptr_t targetPtr, float& targetX, float& targetY, float& targetZ, float predictionTime);
+
 // Calculate FOV angle to target
 float CalculateFOVToTarget(Trainer* trainer, uintptr_t targetPtr);
 
@@ -45,6 +48,12 @@ void SmoothAim(Trainer* trainer, float targetYaw, float targetPitch);
 
 // Main aimbot update function (called every frame)
 void UpdateAimbot(Trainer* trainer);
+
+// Triggerbot: Check if crosshair is on enemy and should shoot
+bool ShouldTriggerShoot(Trainer* trainer);
+
+// Triggerbot: Main update function (called every frame)
+void UpdateTriggerbot(Trainer* trainer);
 
 // Get/clear the LOS cache
 std::vector<LOSCache>& GetLOSCache();
