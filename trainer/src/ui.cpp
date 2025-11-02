@@ -1151,7 +1151,7 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
             }
             const float togglesHeight = static_cast<float>(miscToggleCount) * (kButtonHeight + kButtonSpacing) + 6.0f;
             const float statsHeight = 26.0f + (22.0f * 3.0f) + static_cast<float>(sectionSpacing);
-            contentHeight = 22.0f + togglesHeight + 22.0f + statsHeight;
+            contentHeight = 22.0f + togglesHeight + 22.0f + statsHeight + 10.0f + unloadHeight;
             break;
         }
         case UITab::AIMBOT: {
@@ -1189,7 +1189,7 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     }
 
     const float panelHeight = static_cast<float>(panelPadding) * 2.0f +
-                              headerHeight + hintHeight + tabBarHeight + contentHeight + unloadHeight;
+                              headerHeight + hintHeight + tabBarHeight + contentHeight;
 
     // Handle drag-and-drop BEFORE drawing (so position updates immediately)
     ImVec2 panelPos(panelPosX, panelPosY);
@@ -1317,26 +1317,26 @@ void UIRenderer::DrawMenu(const PlayerStats& stats, Trainer& trainer) {
     // Draw content based on active tab
     ImVec2 contentStart(panelPos.x + panelPadding, y);
     switch (currentTab) {
-        case UITab::MISC:
+        case UITab::MISC: {
             y = DrawMiscTab(drawList, contentStart, trainer, stats);
+
+            // Draw unload button at bottom (only on MISC tab)
+            y += 10.0f;  // Add spacing before unload button
+            ImVec2 sectionStart(panelPos.x + panelPadding, y);
+            bool unloadRequested = false;
+            y = DrawUnloadButton(drawList, sectionStart, unloadRequested);
+
+            if (unloadRequested) {
+                unloadRequestPending = true;
+            }
             break;
+        }
         case UITab::AIMBOT:
             y = DrawAimbotTab(drawList, contentStart, trainer);
             break;
         case UITab::ESP:
             y = DrawESPTab(drawList, contentStart, trainer);
             break;
-    }
-
-    y += 10.0f;  // Add spacing before unload button
-
-    // Draw unload button at bottom
-    ImVec2 sectionStart(panelPos.x + panelPadding, y);
-    bool unloadRequested = false;
-    y = DrawUnloadButton(drawList, sectionStart, unloadRequested);
-    
-    if (unloadRequested) {
-        unloadRequestPending = true;
     }
 }
 
