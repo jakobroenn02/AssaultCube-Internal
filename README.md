@@ -5,14 +5,14 @@ A Tui loader bundled with a DLL trainer. The loader is written in Go with MySQL 
 ## Key Features
 
 ### Loader (Go)
-- Account lifecycle: register, log in, and reset passwords against the `users` table with bcrypt hashing for storage and comparisons.【F:views/register.go†L1-L180】【F:views/login.go†L1-L200】【F:views/resetpassword.go†L1-L202】
+- Account lifecycle: register, log in, and reset passwords against the `users` table with bcrypt hashing for storage and comparisons.
 - Post-login dashboard that keeps track of the signed-in user and routes to game actions or logout.【F:views/dashboard.go†L1-L120】
-- Assault Cube discovery, checksum validation, and DLL injection that wraps Windows process launching utilities from the `injection` package.【F:views/loadassaultcube.go†L1-L310】【F:injection/launcher.go†L1-L160】
-- Shared Lipgloss styling for a consistent terminal experience with keyboard-driven navigation across views.【F:views/styles.go†L1-L200】
+- Assault Cube discovery, checksum validation, and DLL injection that wraps Windows process launching utilities from the `injection` package.
+- Shared Lipgloss styling for a consistent terminal experience with keyboard-driven navigation across views.【
 
 ### Trainer (C++)
-- Hook library (`actrainer.dll`) with toggles for God Mode, Infinite Ammo, No Recoil, and other actions triggered by in-game hotkeys.【F:trainer/README.md†L5-L34】
-- Build scripts and CMake configuration for compiling the DLL on Windows before placing it at `trainer/actrainer.dll` for the loader to inject.【F:trainer/README.md†L36-L80】
+- Hook library (`actrainer.dll`) with toggles for God Mode, Infinite Ammo, No Recoil, and other actions triggered by in-game hotkeys.
+- Build scripts and CMake configuration for compiling the DLL on Windows before placing it at `trainer/actrainer.dll` for the loader to inject.
 
 
 
@@ -48,13 +48,13 @@ tuiapp/
 ## Prerequisites
 
 ### Loader
-- Go 1.25+ (module target shown in `go.mod`).【F:go.mod†L1-L27】
+- Go 1.25+ (module target shown in `go.mod`).【
 - MySQL 8.0+ with a database the loader can connect to.
 - Terminal that supports ANSI colors.
 - Windows is required for the injection flow because the launcher relies on Win32 APIs; other platforms can still run the TUI for development.
 
 ### Trainer
-- Windows with Visual Studio 2019/2022 and CMake 3.15+ to build the DLL.【F:trainer/README.md†L36-L63】
+- Windows with Visual Studio 2019/2022 and CMake 3.15+ to build the DLL.
 
 ## Database Setup
 
@@ -78,7 +78,7 @@ CREATE TABLE users (
    ```bash
    cp appsettings.example.json appsettings.json
    ```
-2. Fill in the database section; the loader parses it through `LoadConfig` and builds a DSN with sensible defaults for timeouts.【F:config.go†L1-L70】
+2. Fill in the database section; the loader parses it through `LoadConfig` and builds a DSN with sensible defaults for timeouts.
 3. Keep `appsettings.json` out of version control—only the example file is committed.
 
 Example configuration:
@@ -111,11 +111,11 @@ Example configuration:
    cmake .. -G "Visual Studio 17 2022" -A Win32
    cmake --build . --config Release
    ```
-3. Copy the resulting `actrainer.dll` (found in `trainer/build/lib/Release/`) to `trainer/actrainer.dll`. The loader checks that path before launching the game.【F:views/loadassaultcube.go†L1-L160】
+3. Copy the resulting `actrainer.dll` (found in `trainer/build/lib/Release/`) to `trainer/actrainer.dll`. The loader checks that path before launching the game.
 
 ### All-in-One Windows Build
 
-When you want to compile everything and launch from a single command, run `build_all.ps1` from the project root in an elevated PowerShell session. The script verifies Visual Studio, builds the trainer, compiles the Go loader as a 32-bit executable, and warns if you are not running with Administrator privileges (required for injection).【F:build_all.ps1†L1-L120】【F:build_all.ps1†L120-L160】
+When you want to compile everything and launch from a single command, run `build_all.ps1` from the project root in an elevated PowerShell session. The script verifies Visual Studio, builds the trainer, compiles the Go loader as a 32-bit executable.
 
 ## Running the Loader
 
@@ -126,35 +126,35 @@ go build -o tuiapp
 ./tuiapp   # Linux/macOS development (no injection)
 ```
 
-On Windows, run `tuiapp.exe` from a terminal. The program clears the console, loads configuration, opens the MySQL pool, and starts the Bubble Tea program.【F:main.go†L1-L160】
+On Windows, run `tuiapp.exe` from a terminal. The program clears the console, loads configuration, opens the MySQL pool, and starts the Bubble Tea program.
 
 ## TUI Flow & Controls
 
 ### Global
 - `q` or `Ctrl+C`: quit the application.
-- `esc`: navigate backwards (logout from dashboard, return to menu, etc.).【F:main.go†L32-L160】
+- `esc`: navigate backwards (logout from dashboard, return to menu, etc.).
 
 ### Menu
-- Use arrow keys or `j/k` to move between **Login** and **Register**, `Enter` to select.【F:views/menu.go†L1-L160】
+- Use arrow keys or `j/k` to move between **Login** and **Register**, `Enter` to select.
 
 ### Login & Register
 - `Tab` / `Shift+Tab` / `Up` / `Down`: change focused field.
-- `Enter`: submit when the button is focused. Errors are displayed inline if validation fails or credentials are wrong.【F:views/login.go†L1-L200】【F:views/register.go†L1-L200】
+- `Enter`: submit when the button is focused. Errors are displayed inline if validation fails or credentials are wrong.
 
 ### Dashboard
-- Choose **Load Assault Cube**, **Reset Password**, or **Logout** with arrow keys and `Enter`. Logging out clears session state before returning to the main menu.【F:views/dashboard.go†L1-L120】【F:main.go†L40-L160】
+- Choose **Load Assault Cube**, **Reset Password**, or **Logout** with arrow keys and `Enter`. Logging out clears session state before returning to the main menu.
 
 ### Load Assault Cube
 - `Enter` or `l`: scan common installation paths for `ac_client.exe` and verify a SHA-256 checksum against `knownVersions`.
-- `s`: launch the game and inject the trainer when a valid executable is found. Status, errors, and trainer hotkeys are rendered in the view.【F:views/loadassaultcube.go†L1-L310】
+- `s`: launch the game and inject the trainer when a valid executable is found. Status, errors, and trainer hotkeys are rendered in the view.
 
 ### Reset Password
 - `Tab` / `Shift+Tab` / arrow keys: switch between password inputs.
-- `Enter`: submit the reset once the button is focused. The model validates the current password, enforces a minimum length, and writes the new hash back to MySQL.【F:views/resetpassword.go†L1-L202】
+- `Enter`: submit the reset once the button is focused. The model validates the current password, enforces a minimum length, and writes the new hash back to MySQL.
 
 ### Customizing the Look & Feel
 - Update the shared Lipgloss palette and widget styles in `views/styles.go` to tweak colors, borders, and focus/blur states for inputs and buttons across the entire interface.【F:views/styles.go†L1-L80】
-- Adjust menu labels or navigation prompts by editing `views/menu.go`, which controls the initial screen and its keyboard bindings.【F:views/menu.go†L1-L120】
+- Adjust menu labels or navigation prompts by editing `views/menu.go`, which controls the initial screen and its keyboard bindings.
 
 ## Updating Known Game Versions
 
@@ -165,12 +165,11 @@ cd tools
 go run checksumtool.go "C:\\Path\\To\\ac_client.exe"
 ```
 
-Copy the SHA-256 value into the `knownVersions` map near the top of `views/loadassaultcube.go`.【F:views/loadassaultcube.go†L1-L80】
+Copy the SHA-256 value into the `knownVersions` map near the top of `views/loadassaultcube.go`.
 
 ## Logs & Diagnostics
 
-The loader prints connection attempts when initializing MySQL and will surface detailed errors if configuration or authentication fails, helping diagnose issues quickly.【F:db.go†L1-L60】【F:views/login.go†L140-L200】
-
+The loader prints connection attempts when initializing MySQL and will surface detailed errors if configuration or authentication fails, helping diagnose issues quickly.
 ## Legal Notice
 
-This project is provided for educational use. Only inject the trainer into games you own, preferably offline or in controlled environments, and respect the terms of the game you are modifying.【F:trainer/README.md†L96-L122】
+This project is provided for educational use. Only inject the trainer into games you own, preferably offline or in controlled environments, and respect the terms of the game you are modifying.
