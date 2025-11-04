@@ -6,7 +6,7 @@ A Tui loader bundled with a DLL trainer. The loader is written in Go with MySQL 
 
 ### Loader (Go)
 - Account lifecycle: register, log in, and reset passwords against the `users` table with bcrypt hashing for storage and comparisons.
-- Post-login dashboard that keeps track of the signed-in user and routes to game actions or logout.【F:views/dashboard.go†L1-L120】
+- Post-login dashboard that keeps track of the signed-in user and routes to game actions or logout.
 - Assault Cube discovery, checksum validation, and DLL injection that wraps Windows process launching utilities from the `injection` package.
 - Shared Lipgloss styling for a consistent terminal experience with keyboard-driven navigation across views.【
 
