@@ -8,6 +8,9 @@
 
 namespace Aimbot {
 
+// Global debug flag (set by trainer, read by aimbot functions)
+static std::atomic<bool> g_debugLogging{false};
+
 // Cache storage (valid for 100ms per entry, max 50 entries)
 static std::vector<LOSCache> losCache;
 
@@ -43,20 +46,24 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
         // Use relative offsets from base
         uintptr_t mapData = Memory::Read<uintptr_t>(acClientBase + 0x00182938);
         if (!mapData) {
-            std::cout << "[LOS] No map data" << std::endl;
+            if (g_debugLogging.load()) {
+                std::cout << "[LOS] No map data" << std::endl;
+            }
             return true;
         }
 
         byte gridShift = Memory::Read<byte>(acClientBase + 0x00182930);
         int mapSize = Memory::Read<int>(acClientBase + 0x00182934);
 
-        std::cout << "[LOS] Base: 0x" << std::hex << acClientBase
-                  << " MapData: 0x" << mapData << std::dec
-                  << " GridShift: " << (int)gridShift
-                  << " MapSize: " << mapSize << std::endl;
+        if (g_debugLogging.load()) {
+            std::cout << "[LOS] Base: 0x" << std::hex << acClientBase
+                      << " MapData: 0x" << mapData << std::dec
+                      << " GridShift: " << (int)gridShift
+                      << " MapSize: " << mapSize << std::endl;
 
-        std::cout << "[LOS] Positions: Local(" << x1 << "," << y1 << "," << z1
-                  << ") Target(" << x2 << "," << y2 << "," << z2 << ")" << std::endl;
+            std::cout << "[LOS] Positions: Local(" << x1 << "," << y1 << "," << z1
+                      << ") Target(" << x2 << "," << y2 << "," << z2 << ")" << std::endl;
+        }
 
         // Check multiple points along the ray (not just midpoint)
         // This catches walls that aren't exactly at the center
@@ -71,14 +78,16 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
             int gx = (int)checkX;
             int gy = (int)checkY;
 
-            if (i == numChecks / 2) { // Log the middle check point
+            if (g_debugLogging.load() && i == numChecks / 2) { // Log the middle check point
                 std::cout << "[LOS] Check point " << i << ": (" << checkX << ", " << checkY << ", " << checkZ << ")" << std::endl;
                 std::cout << "[LOS] Grid: (" << gx << ", " << gy << ")" << std::endl;
             }
 
             // Bounds check
             if (gx < 0 || gy < 0 || gx >= mapSize || gy >= mapSize) {
-                if (i == numChecks / 2) std::cout << "[LOS] Out of bounds" << std::endl;
+                if (g_debugLogging.load() && i == numChecks / 2) {
+                    std::cout << "[LOS] Out of bounds" << std::endl;
+                }
                 continue; // Skip this check point
             }
 
@@ -101,9 +110,11 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
                 // SOLID (0) blocks everything between floor and ceiling
                 // CORNER (1), FHF (2), CHF (3) also block if within their height range
                 if (checkZ >= floor && checkZ <= ceiling) {
-                    std::cout << "[LOS] *** BLOCKED BY WALL at check point " << i << " ***" << std::endl;
-                    std::cout << "[LOS] Type=" << (int)cubeType << " Floor=" << (int)floor
-                              << " Ceil=" << (int)ceiling << " CheckZ=" << checkZ << std::endl;
+                    if (g_debugLogging.load()) {
+                        std::cout << "[LOS] *** BLOCKED BY WALL at check point " << i << " ***" << std::endl;
+                        std::cout << "[LOS] Type=" << (int)cubeType << " Floor=" << (int)floor
+                                  << " Ceil=" << (int)ceiling << " CheckZ=" << checkZ << std::endl;
+                    }
                     return false;
                 }
             }
@@ -112,7 +123,9 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
         return true;
 
     } __except(EXCEPTION_EXECUTE_HANDLER) {
-        std::cout << "[LOS] Exception!" << std::endl;
+        if (g_debugLogging.load()) {
+            std::cout << "[LOS] Exception!" << std::endl;
+        }
         return true;
     }
 }
@@ -122,7 +135,7 @@ bool HasClearLineOfSight(uintptr_t localEntity, uintptr_t targetEntity) {
     DWORD now = GetTickCount();
 
     static int callCount = 0;
-    if (++callCount % 30 == 0) {  // Log every 30th call
+    if (g_debugLogging.load() && ++callCount % 30 == 0) {  // Log every 30th call
         std::cout << "[LOS] HasClearLineOfSight called (local: 0x" << std::hex << localEntity
                   << ", target: 0x" << targetEntity << std::dec << ")" << std::endl;
     }
@@ -131,7 +144,7 @@ bool HasClearLineOfSight(uintptr_t localEntity, uintptr_t targetEntity) {
     for (auto& cache : losCache) {
         if (cache.entity1 == localEntity && cache.entity2 == targetEntity) {
             if (now - cache.timestamp < 100) {
-                if (callCount % 30 == 0) {
+                if (g_debugLogging.load() && callCount % 30 == 0) {
                     std::cout << "[LOS] Cache HIT - returning " << (cache.result ? "true" : "false") << std::endl;
                 }
                 return cache.result; // Return cached - no map lookup needed!
@@ -139,7 +152,7 @@ bool HasClearLineOfSight(uintptr_t localEntity, uintptr_t targetEntity) {
         }
     }
 
-    if (callCount % 30 == 0) {
+    if (g_debugLogging.load() && callCount % 30 == 0) {
         std::cout << "[LOS] Cache MISS - performing actual check" << std::endl;
     }
 
@@ -221,19 +234,38 @@ uintptr_t FindClosestEnemy(Trainer* trainer, float& outDistance) {
         return 0;
     }
 
+    // Check if game mode is FFA by reading game mode from memory
+    bool isFFA = IsFFAMode();
+
+    if (g_debugLogging.load()) {
+        std::cout << "[AIMBOT] FindClosestEnemy: Got " << players.size() << " players to check" << std::endl;
+        std::cout << "[AIMBOT] Local team: " << localTeam << ", playerBase: 0x" << std::hex << playerBase << std::dec << std::endl;
+        std::cout << "[AIMBOT] Game mode: " << (isFFA ? "FFA (everyone is enemy)" : "Team-based") << std::endl;
+    }
+
     uintptr_t closestEnemy = 0;
     float closestDistance = 99999.0f;
 
     for (uintptr_t playerPtr : players) {
         // Skip invalid or dead players
         if (!trainer->IsPlayerValid(playerPtr) || !trainer->IsPlayerAlive(playerPtr)) {
+            if (g_debugLogging.load()) {
+                std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                          << " - invalid or dead" << std::endl;
+            }
             continue;
         }
 
-        // Skip teammates (only aim at enemies)
-        int playerTeam = trainer->GetPlayerTeam(playerPtr);
-        if (playerTeam == localTeam) {
-            continue;
+        // Skip teammates (only in team-based modes, not FFA)
+        if (!isFFA) {
+            int playerTeam = trainer->GetPlayerTeam(playerPtr);
+            if (playerTeam == localTeam) {
+                if (g_debugLogging.load()) {
+                    std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                              << " - teammate (team " << playerTeam << ")" << std::endl;
+                }
+                continue;
+            }
         }
 
         // Get enemy position
@@ -299,11 +331,20 @@ void PredictTargetPosition(uintptr_t targetPtr, float& targetX, float& targetY, 
     float velY = Memory::Read<float>(targetPtr + 0x14);
     float velZ = Memory::Read<float>(targetPtr + 0x18);
 
-    // Calculate predicted position: position + (velocity * time)
-    // predictionTime is typically 0.05-0.15 seconds (50-150ms)
-    targetX += velX * predictionTime;
-    targetY += velY * predictionTime;
-    targetZ += velZ * predictionTime;
+    // Calculate velocity magnitude to check if target is moving
+    float velocityMag = sqrt(velX * velX + velY * velY + velZ * velZ);
+
+    // Only apply prediction if target is actually moving (threshold: 1 unit/sec)
+    if (velocityMag > 1.0f) {
+        // For faster moving targets, slightly increase prediction multiplier
+        float speedMultiplier = 1.0f + (velocityMag / 100.0f) * 0.2f;  // Up to 20% boost for fast targets
+        float adjustedPrediction = predictionTime * speedMultiplier;
+
+        // Calculate predicted position: position + (velocity * time)
+        targetX += velX * adjustedPrediction;
+        targetY += velY * adjustedPrediction;
+        targetZ += velZ * adjustedPrediction;
+    }
 }
 
 // Calculate FOV (field of view) angle to a target
@@ -372,6 +413,15 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
         return 0;
     }
 
+    // Check if game mode is FFA by reading game mode from memory
+    bool isFFA = IsFFAMode();
+
+    if (g_debugLogging.load()) {
+        std::cout << "[AIMBOT] FindClosestEnemyToCrosshair: Got " << players.size() << " players to check" << std::endl;
+        std::cout << "[AIMBOT] Local team: " << localTeam << ", playerBase: 0x" << std::hex << playerBase << std::dec << std::endl;
+        std::cout << "[AIMBOT] Game mode: " << (isFFA ? "FFA (everyone is enemy)" : "Team-based") << std::endl;
+    }
+
     uintptr_t closestEnemy = 0;
     float closestFOV = 999.0f;
     float maxFOV = trainer->GetAimbotFOV();  // Only consider enemies within this FOV
@@ -379,13 +429,23 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
     for (uintptr_t playerPtr : players) {
         // Skip invalid or dead players
         if (!trainer->IsPlayerValid(playerPtr) || !trainer->IsPlayerAlive(playerPtr)) {
+            if (g_debugLogging.load()) {
+                std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                          << " - invalid or dead" << std::endl;
+            }
             continue;
         }
 
-        // Skip teammates
-        int playerTeam = trainer->GetPlayerTeam(playerPtr);
-        if (playerTeam == localTeam) {
-            continue;
+        // Skip teammates (only in team-based modes, not FFA)
+        if (!isFFA) {
+            int playerTeam = trainer->GetPlayerTeam(playerPtr);
+            if (playerTeam == localTeam) {
+                if (g_debugLogging.load()) {
+                    std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                              << " - teammate (team " << playerTeam << ")" << std::endl;
+                }
+                continue;
+            }
         }
 
         // Get target position for visibility check
@@ -531,6 +591,13 @@ void UpdateAimbot(Trainer* trainer) {
         }
     }
 
+    // Validate target is still valid and alive (might have died since finding it)
+    if (!trainer->IsPlayerValid(target) || !trainer->IsPlayerAlive(target)) {
+        // Target died - clear LOS cache to remove stale entries
+        ClearLOSCache();
+        return;  // Target died or became invalid - skip this frame and find new target next frame
+    }
+
     // Get local player head position (aim from head, not feet)
     float localX, localY, localZ;
     trainer->GetLocalPlayerPosition(localX, localY, localZ);
@@ -547,15 +614,20 @@ void UpdateAimbot(Trainer* trainer) {
     float dz = targetZ - localZ;
     float distance = sqrt(dx * dx + dy * dy + dz * dz);
 
-    // Apply velocity-based prediction
-    // Prediction time scales with distance (further = more prediction needed)
-    // Base prediction: ~100ms, scales up with distance
-    float predictionTime = 0.1f + (distance / 2000.0f);  // 0.1-0.35s range
+    // Apply velocity-based prediction with smoothing compensation
+    // Prediction time needs to account for:
+    // 1. Base reaction time (~50ms)
+    // 2. Distance-based bullet travel time
+    // 3. Smoothing delay (higher smoothness = more prediction needed)
+    float smoothness = trainer->GetAimbotSmoothness();
+    float smoothingDelay = smoothness * 0.016f;  // ~1 frame per smoothness point at 60fps
+    float distanceDelay = distance / 3000.0f;     // Reduced divisor for more aggressive prediction
+    float predictionTime = 0.05f + distanceDelay + smoothingDelay;
     PredictTargetPosition(target, targetX, targetY, targetZ, predictionTime);
 
     // DEBUG: Print positions AND raw memory values every 100 frames
     static int frameCount = 0;
-    if (frameCount++ % 100 == 0) {
+    if (g_debugLogging.load() && frameCount++ % 100 == 0) {
         std::cout << "[AIMBOT DEBUG]" << std::endl;
         std::cout << "  Local pos: (" << localX << ", " << localY << ", " << localZ << ")" << std::endl;
         std::cout << "  Target pos (predicted): (" << targetX << ", " << targetY << ", " << targetZ << ")" << std::endl;
@@ -666,7 +738,7 @@ void UpdateTriggerbot(Trainer* trainer) {
 
                 // Debug output
                 static int shootCount = 0;
-                if (shootCount++ % 10 == 0) {
+                if (g_debugLogging.load() && shootCount++ % 10 == 0) {
                     std::cout << "[TRIGGERBOT] Shooting! (delay: " << delay << "ms)" << std::endl;
                 }
             }
@@ -687,6 +759,51 @@ void UpdateTriggerbot(Trainer* trainer) {
                 }
             }
         }
+    }
+}
+
+// Set debug logging flag
+void SetDebugLogging(bool enabled) {
+    g_debugLogging.store(enabled);
+}
+
+// Check if current game mode is FFA (everyone is enemy)
+bool IsFFAMode() {
+    uintptr_t acClientBase = 0;
+    size_t moduleSize = 0;
+    if (!Memory::GetModuleInfo("ac_client.exe", acClientBase, moduleSize)) {
+        return false;  // Default to team mode if can't read
+    }
+
+    // Read game mode from memory
+    int gameMode = Memory::Read<int>(acClientBase + Trainer::OFFSET_GAME_MODE);
+
+    // FFA game modes (everyone is an enemy)
+    // Based on AssaultCube game mode values
+    switch (gameMode) {
+        case 0:   // Deathmatch
+        case 4:   // Pistol frenzy
+        case 6:   // Bot deathmatch
+        case 7:   // Last swiss standing
+        case 8:   // One shot, one kill
+        case 11:  // Hunt the flag
+        case 13:  // Keep the flag
+        case 16:  // Bot one shot
+        case 17:  // Unknown FFA mode
+        case 20:  // Unknown FFA mode
+        case 21:  // Unknown FFA mode
+            return true;
+
+        // Team modes (check team ID)
+        case 2:   // Team survivor
+        case 3:   // Capture the flag
+        case 5:   // Bot team deathmatch
+        case 9:   // Team one shot, one kill
+        case 12:  // Team keep the flag
+        case 14:  // Team pistol frenzy
+        case 15:  // Team last swiss standing
+        default:
+            return false;
     }
 }
 

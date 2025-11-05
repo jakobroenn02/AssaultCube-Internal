@@ -1635,44 +1635,53 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     transform.viewport[3] = screenHeight;
 
     // ===== DEBUG PANEL - TOP LEFT (below HOOK ACTIVE box) =====
+    // Only render debug info if debug logging is enabled
+    bool showDebug = trainer.IsDebugLoggingEnabled();
+
     int debugY = 70;  // Start below the HOOK ACTIVE box (which ends at Y=60)
     const int debugLineHeight = 16;
 
-    drawList->AddRectFilled(ImVec2(5, debugY - 2), ImVec2(400, debugY + 150), IM_COL32(0, 0, 0, 180));
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 255, 255), "=== ESP DEBUG (Camera Matrices) ===");
-    debugY += debugLineHeight;
+    if (showDebug) {
+        drawList->AddRectFilled(ImVec2(5, debugY - 2), ImVec2(400, debugY + 150), IM_COL32(0, 0, 0, 180));
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 255, 255), "=== ESP DEBUG (Camera Matrices) ===");
+        debugY += debugLineHeight;
 
-    const char* viewSource = hasCapturedView ? "View source: glLoadMatrixf hook" : "View source: memory fallback";
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(220, 220, 255, 255), viewSource);
-    debugY += debugLineHeight;
+        const char* viewSource = hasCapturedView ? "View source: glLoadMatrixf hook" : "View source: memory fallback";
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(220, 220, 255, 255), viewSource);
+        debugY += debugLineHeight;
 
-    char matrixDebug[256];
-    snprintf(matrixDebug, sizeof(matrixDebug), "ModelView[0,5,10,15]=%.2f %.2f %.2f %.2f",
-             viewMatrixF[0], viewMatrixF[5], viewMatrixF[10], viewMatrixF[15]);
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
-    debugY += debugLineHeight;
+        char matrixDebug[256];
+        snprintf(matrixDebug, sizeof(matrixDebug), "ModelView[0,5,10,15]=%.2f %.2f %.2f %.2f",
+                 viewMatrixF[0], viewMatrixF[5], viewMatrixF[10], viewMatrixF[15]);
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
+        debugY += debugLineHeight;
 
-    snprintf(matrixDebug, sizeof(matrixDebug), "Projection source: %s",
-             projectionValid ? "Combined VP (0x0057DFD0)" : "Identity fallback");
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
-    debugY += debugLineHeight;
+        snprintf(matrixDebug, sizeof(matrixDebug), "Projection source: %s",
+                 projectionValid ? "Combined VP (0x0057DFD0)" : "Identity fallback");
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(200, 200, 255, 255), matrixDebug);
+        debugY += debugLineHeight;
 
-    char screenInfo[128];
-    snprintf(screenInfo, sizeof(screenInfo), "Screen: %dx%d (from RECT)", screenWidth, screenHeight);
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(150, 150, 255, 255), screenInfo);
-    debugY += debugLineHeight;
+        char screenInfo[128];
+        snprintf(screenInfo, sizeof(screenInfo), "Screen: %dx%d (from RECT)", screenWidth, screenHeight);
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(150, 150, 255, 255), screenInfo);
+        debugY += debugLineHeight;
+    }
 
     // Get all players
     std::vector<uintptr_t> players;
     if (!trainer.GetPlayerList(players)) {
-        drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 0, 255), "ERROR: GetPlayerList failed!");
+        if (showDebug) {
+            drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 0, 0, 255), "ERROR: GetPlayerList failed!");
+        }
         return;
     }
 
-    char playerCount[128];
-    snprintf(playerCount, sizeof(playerCount), "Player Count: %d", (int)players.size());
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(0, 255, 0, 255), playerCount);
-    debugY += debugLineHeight;
+    if (showDebug) {
+        char playerCount[128];
+        snprintf(playerCount, sizeof(playerCount), "Player Count: %d", (int)players.size());
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(0, 255, 0, 255), playerCount);
+        debugY += debugLineHeight;
+    }
 
     // Get local player position for distance calculations
     float localX, localY, localZ;
@@ -1727,7 +1736,7 @@ void UIRenderer::RenderESP(Trainer& trainer) {
             offScreenPlayers++;
 
             // Debug: Show why player is offscreen (only first 3 to avoid spam)
-            if (playerDebugLine < 3) {
+            if (showDebug && playerDebugLine < 3) {
                 char offscreenDbg[256];
                 snprintf(offscreenDbg, sizeof(offscreenDbg), "  [OFFSCREEN] %s at (%.0f,%.0f,%.0f)", name, feetX, feetY, feetZ);
                 drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 100, 0, 255), offscreenDbg);
@@ -1738,7 +1747,7 @@ void UIRenderer::RenderESP(Trainer& trainer) {
         }
 
         // Debug: Show successful projection (only first 3)
-        if (playerDebugLine < 3) {
+        if (showDebug && playerDebugLine < 3) {
             char projDbg[512];
             snprintf(projDbg, sizeof(projDbg), "  [VISIBLE] %s: Dist=%.1f", name, distance);
             drawList->AddText(ImVec2(10, debugY), IM_COL32(0, 255, 0, 255), projDbg);
@@ -1800,8 +1809,10 @@ void UIRenderer::RenderESP(Trainer& trainer) {
     glPopMatrix();
 
     // Summary stats at bottom of debug panel
-    char summaryText[128];
-    snprintf(summaryText, sizeof(summaryText), "Valid: %d | OffScreen: %d | Rendered: %d",
-             validPlayers, offScreenPlayers, validPlayers - offScreenPlayers);
-    drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 255, 0, 255), summaryText);
+    if (showDebug) {
+        char summaryText[128];
+        snprintf(summaryText, sizeof(summaryText), "Valid: %d | OffScreen: %d | Rendered: %d",
+                 validPlayers, offScreenPlayers, validPlayers - offScreenPlayers);
+        drawList->AddText(ImVec2(10, debugY), IM_COL32(255, 255, 0, 255), summaryText);
+    }
 }

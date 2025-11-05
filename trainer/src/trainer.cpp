@@ -41,6 +41,7 @@ Trainer::Trainer(uintptr_t base)
       triggerbot(false),
       triggerbotDelay(50.0f),  // 50ms default delay
       triggerbotFOV(2.0f),  // 2 degree tolerance
+      debugLogging(false),  // Debug logging OFF by default for performance
       recoilPatchAddress(0),
       recoilPatched(false),
       playerBase(0),
@@ -409,6 +410,11 @@ bool Trainer::GetPlayerList(std::vector<uintptr_t>& players) {
         uintptr_t playerPtr = Memory::Read<uintptr_t>(entityList + (i * 4));
         if (playerPtr && playerPtr != playerBase) {  // Skip local player
             players.push_back(playerPtr);
+        } else if (debugLogging.load() && playerPtr) {
+            std::cout << "[DEBUG] GetPlayerList: Skipping player at index " << i
+                      << " (0x" << std::hex << playerPtr << std::dec << ") "
+                      << (playerPtr == playerBase ? "- is local player" : "- is null")
+                      << " (playerBase=0x" << std::hex << playerBase << std::dec << ")" << std::endl;
         }
     }
     
@@ -660,6 +666,14 @@ std::vector<FeatureToggle> Trainer::BuildFeatureToggles() {
     aimbotToggle.isActive = [this]() { return this->aimbot.load(); };
     toggles.push_back(aimbotToggle);
 
+    // Debug Logging toggle
+    FeatureToggle debugToggle;
+    debugToggle.name = "Debug Logging";
+    debugToggle.description = "Enable console debug output (impacts performance)";
+    debugToggle.onToggle = [this]() { this->SetDebugLogging(!this->IsDebugLoggingEnabled()); };
+    debugToggle.isActive = [this]() { return this->debugLogging.load(); };
+    toggles.push_back(debugToggle);
+
     return toggles;
 }
 
@@ -866,4 +880,10 @@ void Trainer::UpdateAimbot() {
 // Main triggerbot update - wrapper that delegates to Aimbot namespace
 void Trainer::UpdateTriggerbot() {
     Aimbot::UpdateTriggerbot(this);
+}
+
+// Set debug logging and sync with aimbot module
+void Trainer::SetDebugLogging(bool value) {
+    debugLogging.store(value);
+    Aimbot::SetDebugLogging(value);
 }
