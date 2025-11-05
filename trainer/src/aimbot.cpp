@@ -299,11 +299,20 @@ void PredictTargetPosition(uintptr_t targetPtr, float& targetX, float& targetY, 
     float velY = Memory::Read<float>(targetPtr + 0x14);
     float velZ = Memory::Read<float>(targetPtr + 0x18);
 
-    // Calculate predicted position: position + (velocity * time)
-    // predictionTime is typically 0.05-0.15 seconds (50-150ms)
-    targetX += velX * predictionTime;
-    targetY += velY * predictionTime;
-    targetZ += velZ * predictionTime;
+    // Calculate velocity magnitude to check if target is moving
+    float velocityMag = sqrt(velX * velX + velY * velY + velZ * velZ);
+
+    // Only apply prediction if target is actually moving (threshold: 1 unit/sec)
+    if (velocityMag > 1.0f) {
+        // For faster moving targets, slightly increase prediction multiplier
+        float speedMultiplier = 1.0f + (velocityMag / 100.0f) * 0.2f;  // Up to 20% boost for fast targets
+        float adjustedPrediction = predictionTime * speedMultiplier;
+
+        // Calculate predicted position: position + (velocity * time)
+        targetX += velX * adjustedPrediction;
+        targetY += velY * adjustedPrediction;
+        targetZ += velZ * adjustedPrediction;
+    }
 }
 
 // Calculate FOV (field of view) angle to a target
@@ -547,10 +556,15 @@ void UpdateAimbot(Trainer* trainer) {
     float dz = targetZ - localZ;
     float distance = sqrt(dx * dx + dy * dy + dz * dz);
 
-    // Apply velocity-based prediction
-    // Prediction time scales with distance (further = more prediction needed)
-    // Base prediction: ~100ms, scales up with distance
-    float predictionTime = 0.1f + (distance / 2000.0f);  // 0.1-0.35s range
+    // Apply velocity-based prediction with smoothing compensation
+    // Prediction time needs to account for:
+    // 1. Base reaction time (~50ms)
+    // 2. Distance-based bullet travel time
+    // 3. Smoothing delay (higher smoothness = more prediction needed)
+    float smoothness = trainer->GetAimbotSmoothness();
+    float smoothingDelay = smoothness * 0.016f;  // ~1 frame per smoothness point at 60fps
+    float distanceDelay = distance / 3000.0f;     // Reduced divisor for more aggressive prediction
+    float predictionTime = 0.05f + distanceDelay + smoothingDelay;
     PredictTargetPosition(target, targetX, targetY, targetZ, predictionTime);
 
     // DEBUG: Print positions AND raw memory values every 100 frames
