@@ -51,10 +51,10 @@ private:
     std::atomic<bool> aimbotIgnoreWalls;  // True = aim through walls, False = only visible targets
     std::atomic<bool> triggerbot;  // Triggerbot feature (auto-shoot when crosshair on enemy)
     std::atomic<float> triggerbotDelay;  // Delay before shooting (ms) for more human-like behavior
-    std::atomic<float> triggerbotFOV;  // FOV tolerance for triggerbot (degrees)
-    std::atomic<bool> debugLogging;  // Enable/disable debug console logging for performance
+std::atomic<float> triggerbotFOV;  // FOV tolerance for triggerbot (degrees)
+std::atomic<bool> debugLogging;  // Enable/disable debug console logging for performance
 
-    // Recoil patch data
+// Recoil patch data
     uintptr_t recoilPatchAddress;
     std::vector<BYTE> originalRecoilBytes;
     bool recoilPatched;
