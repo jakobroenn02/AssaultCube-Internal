@@ -553,6 +553,13 @@ void UpdateAimbot(Trainer* trainer) {
         }
     }
 
+    // Validate target is still valid and alive (might have died since finding it)
+    if (!trainer->IsPlayerValid(target) || !trainer->IsPlayerAlive(target)) {
+        // Target died - clear LOS cache to remove stale entries
+        ClearLOSCache();
+        return;  // Target died or became invalid - skip this frame and find new target next frame
+    }
+
     // Get local player head position (aim from head, not feet)
     float localX, localY, localZ;
     trainer->GetLocalPlayerPosition(localX, localY, localZ);
