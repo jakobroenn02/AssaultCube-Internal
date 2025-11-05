@@ -234,19 +234,52 @@ uintptr_t FindClosestEnemy(Trainer* trainer, float& outDistance) {
         return 0;
     }
 
+    if (g_debugLogging.load()) {
+        std::cout << "[AIMBOT] FindClosestEnemy: Got " << players.size() << " players to check" << std::endl;
+        std::cout << "[AIMBOT] Local team: " << localTeam << ", playerBase: 0x" << std::hex << playerBase << std::dec << std::endl;
+    }
+
+    // Detect FFA mode: In FFA, all players have same team but are enemies
+    // If there are 2+ players and they all have the same team, it's FFA
+    bool isFFA = false;
+    if (players.size() >= 2) {
+        int firstPlayerTeam = trainer->GetPlayerTeam(players[0]);
+        bool allSameTeam = true;
+        for (size_t i = 1; i < players.size() && allSameTeam; ++i) {
+            if (trainer->GetPlayerTeam(players[i]) != firstPlayerTeam) {
+                allSameTeam = false;
+            }
+        }
+        isFFA = (allSameTeam && firstPlayerTeam == localTeam);
+    }
+
+    if (g_debugLogging.load()) {
+        std::cout << "[AIMBOT] Game mode: " << (isFFA ? "FFA (everyone is enemy)" : "Team-based") << std::endl;
+    }
+
     uintptr_t closestEnemy = 0;
     float closestDistance = 99999.0f;
 
     for (uintptr_t playerPtr : players) {
         // Skip invalid or dead players
         if (!trainer->IsPlayerValid(playerPtr) || !trainer->IsPlayerAlive(playerPtr)) {
+            if (g_debugLogging.load()) {
+                std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                          << " - invalid or dead" << std::endl;
+            }
             continue;
         }
 
-        // Skip teammates (only aim at enemies)
-        int playerTeam = trainer->GetPlayerTeam(playerPtr);
-        if (playerTeam == localTeam) {
-            continue;
+        // Skip teammates (only in team-based modes, not FFA)
+        if (!isFFA) {
+            int playerTeam = trainer->GetPlayerTeam(playerPtr);
+            if (playerTeam == localTeam) {
+                if (g_debugLogging.load()) {
+                    std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                              << " - teammate (team " << playerTeam << ")" << std::endl;
+                }
+                continue;
+            }
         }
 
         // Get enemy position
@@ -394,6 +427,28 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
         return 0;
     }
 
+    if (g_debugLogging.load()) {
+        std::cout << "[AIMBOT] FindClosestEnemyToCrosshair: Got " << players.size() << " players to check" << std::endl;
+        std::cout << "[AIMBOT] Local team: " << localTeam << ", playerBase: 0x" << std::hex << playerBase << std::dec << std::endl;
+    }
+
+    // Detect FFA mode: In FFA, all players have same team but are enemies
+    bool isFFA = false;
+    if (players.size() >= 2) {
+        int firstPlayerTeam = trainer->GetPlayerTeam(players[0]);
+        bool allSameTeam = true;
+        for (size_t i = 1; i < players.size() && allSameTeam; ++i) {
+            if (trainer->GetPlayerTeam(players[i]) != firstPlayerTeam) {
+                allSameTeam = false;
+            }
+        }
+        isFFA = (allSameTeam && firstPlayerTeam == localTeam);
+    }
+
+    if (g_debugLogging.load()) {
+        std::cout << "[AIMBOT] Game mode: " << (isFFA ? "FFA (everyone is enemy)" : "Team-based") << std::endl;
+    }
+
     uintptr_t closestEnemy = 0;
     float closestFOV = 999.0f;
     float maxFOV = trainer->GetAimbotFOV();  // Only consider enemies within this FOV
@@ -401,13 +456,23 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
     for (uintptr_t playerPtr : players) {
         // Skip invalid or dead players
         if (!trainer->IsPlayerValid(playerPtr) || !trainer->IsPlayerAlive(playerPtr)) {
+            if (g_debugLogging.load()) {
+                std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                          << " - invalid or dead" << std::endl;
+            }
             continue;
         }
 
-        // Skip teammates
-        int playerTeam = trainer->GetPlayerTeam(playerPtr);
-        if (playerTeam == localTeam) {
-            continue;
+        // Skip teammates (only in team-based modes, not FFA)
+        if (!isFFA) {
+            int playerTeam = trainer->GetPlayerTeam(playerPtr);
+            if (playerTeam == localTeam) {
+                if (g_debugLogging.load()) {
+                    std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
+                              << " - teammate (team " << playerTeam << ")" << std::endl;
+                }
+                continue;
+            }
         }
 
         // Get target position for visibility check

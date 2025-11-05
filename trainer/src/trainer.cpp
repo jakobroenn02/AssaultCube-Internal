@@ -410,6 +410,11 @@ bool Trainer::GetPlayerList(std::vector<uintptr_t>& players) {
         uintptr_t playerPtr = Memory::Read<uintptr_t>(entityList + (i * 4));
         if (playerPtr && playerPtr != playerBase) {  // Skip local player
             players.push_back(playerPtr);
+        } else if (debugLogging.load() && playerPtr) {
+            std::cout << "[DEBUG] GetPlayerList: Skipping player at index " << i
+                      << " (0x" << std::hex << playerPtr << std::dec << ") "
+                      << (playerPtr == playerBase ? "- is local player" : "- is null")
+                      << " (playerBase=0x" << std::hex << playerBase << std::dec << ")" << std::endl;
         }
     }
     
