@@ -234,26 +234,12 @@ uintptr_t FindClosestEnemy(Trainer* trainer, float& outDistance) {
         return 0;
     }
 
+    // Check if game mode is FFA by reading game mode from memory
+    bool isFFA = IsFFAMode();
+
     if (g_debugLogging.load()) {
         std::cout << "[AIMBOT] FindClosestEnemy: Got " << players.size() << " players to check" << std::endl;
         std::cout << "[AIMBOT] Local team: " << localTeam << ", playerBase: 0x" << std::hex << playerBase << std::dec << std::endl;
-    }
-
-    // Detect FFA mode: In FFA, all players have same team but are enemies
-    // If there are 2+ players and they all have the same team, it's FFA
-    bool isFFA = false;
-    if (players.size() >= 2) {
-        int firstPlayerTeam = trainer->GetPlayerTeam(players[0]);
-        bool allSameTeam = true;
-        for (size_t i = 1; i < players.size() && allSameTeam; ++i) {
-            if (trainer->GetPlayerTeam(players[i]) != firstPlayerTeam) {
-                allSameTeam = false;
-            }
-        }
-        isFFA = (allSameTeam && firstPlayerTeam == localTeam);
-    }
-
-    if (g_debugLogging.load()) {
         std::cout << "[AIMBOT] Game mode: " << (isFFA ? "FFA (everyone is enemy)" : "Team-based") << std::endl;
     }
 
@@ -427,25 +413,12 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
         return 0;
     }
 
+    // Check if game mode is FFA by reading game mode from memory
+    bool isFFA = IsFFAMode();
+
     if (g_debugLogging.load()) {
         std::cout << "[AIMBOT] FindClosestEnemyToCrosshair: Got " << players.size() << " players to check" << std::endl;
         std::cout << "[AIMBOT] Local team: " << localTeam << ", playerBase: 0x" << std::hex << playerBase << std::dec << std::endl;
-    }
-
-    // Detect FFA mode: In FFA, all players have same team but are enemies
-    bool isFFA = false;
-    if (players.size() >= 2) {
-        int firstPlayerTeam = trainer->GetPlayerTeam(players[0]);
-        bool allSameTeam = true;
-        for (size_t i = 1; i < players.size() && allSameTeam; ++i) {
-            if (trainer->GetPlayerTeam(players[i]) != firstPlayerTeam) {
-                allSameTeam = false;
-            }
-        }
-        isFFA = (allSameTeam && firstPlayerTeam == localTeam);
-    }
-
-    if (g_debugLogging.load()) {
         std::cout << "[AIMBOT] Game mode: " << (isFFA ? "FFA (everyone is enemy)" : "Team-based") << std::endl;
     }
 
@@ -792,6 +765,46 @@ void UpdateTriggerbot(Trainer* trainer) {
 // Set debug logging flag
 void SetDebugLogging(bool enabled) {
     g_debugLogging.store(enabled);
+}
+
+// Check if current game mode is FFA (everyone is enemy)
+bool IsFFAMode() {
+    uintptr_t acClientBase = 0;
+    size_t moduleSize = 0;
+    if (!Memory::GetModuleInfo("ac_client.exe", acClientBase, moduleSize)) {
+        return false;  // Default to team mode if can't read
+    }
+
+    // Read game mode from memory
+    int gameMode = Memory::Read<int>(acClientBase + Trainer::OFFSET_GAME_MODE);
+
+    // FFA game modes (everyone is an enemy)
+    // Based on AssaultCube game mode values
+    switch (gameMode) {
+        case 0:   // Deathmatch
+        case 4:   // Pistol frenzy
+        case 6:   // Bot deathmatch
+        case 7:   // Last swiss standing
+        case 8:   // One shot, one kill
+        case 11:  // Hunt the flag
+        case 13:  // Keep the flag
+        case 16:  // Bot one shot
+        case 17:  // Unknown FFA mode
+        case 20:  // Unknown FFA mode
+        case 21:  // Unknown FFA mode
+            return true;
+
+        // Team modes (check team ID)
+        case 2:   // Team survivor
+        case 3:   // Capture the flag
+        case 5:   // Bot team deathmatch
+        case 9:   // Team one shot, one kill
+        case 12:  // Team keep the flag
+        case 14:  // Team pistol frenzy
+        case 15:  // Team last swiss standing
+        default:
+            return false;
+    }
 }
 
 } // namespace Aimbot

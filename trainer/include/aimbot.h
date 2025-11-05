@@ -62,6 +62,9 @@ void ClearLOSCache();
 // Set debug logging flag for aimbot
 void SetDebugLogging(bool enabled);
 
+// Check if current game mode is FFA (everyone is enemy)
+bool IsFFAMode();
+
 } // namespace Aimbot
 
 #endif // AIMBOT_H
