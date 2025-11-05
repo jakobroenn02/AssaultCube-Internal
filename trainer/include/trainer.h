@@ -49,7 +49,8 @@ private:
     std::atomic<bool> triggerbot;  // Triggerbot feature (auto-shoot when crosshair on enemy)
     std::atomic<float> triggerbotDelay;  // Delay before shooting (ms) for more human-like behavior
     std::atomic<float> triggerbotFOV;  // FOV tolerance for triggerbot (degrees)
-    
+    std::atomic<bool> debugLogging;  // Enable/disable debug console logging for performance
+
     // Recoil patch data
     uintptr_t recoilPatchAddress;
     std::vector<BYTE> originalRecoilBytes;
@@ -227,6 +228,10 @@ public:
     void SetTriggerbotDelay(float value) { triggerbotDelay.store(value); }
     float GetTriggerbotFOV() const { return triggerbotFOV.load(); }
     void SetTriggerbotFOV(float value) { triggerbotFOV.store(value); }
+
+    // Debug settings accessors
+    bool IsDebugLoggingEnabled() const { return debugLogging.load(); }
+    void SetDebugLogging(bool value);  // Defined in cpp to sync with aimbot
 
     // Accessors
     UIRenderer* GetUIRenderer() const { return uiRenderer; }

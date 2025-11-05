@@ -59,6 +59,9 @@ void UpdateTriggerbot(Trainer* trainer);
 std::vector<LOSCache>& GetLOSCache();
 void ClearLOSCache();
 
+// Set debug logging flag for aimbot
+void SetDebugLogging(bool enabled);
+
 } // namespace Aimbot
 
 #endif // AIMBOT_H

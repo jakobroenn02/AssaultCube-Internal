@@ -8,6 +8,9 @@
 
 namespace Aimbot {
 
+// Global debug flag (set by trainer, read by aimbot functions)
+static std::atomic<bool> g_debugLogging{false};
+
 // Cache storage (valid for 100ms per entry, max 50 entries)
 static std::vector<LOSCache> losCache;
 
@@ -43,20 +46,24 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
         // Use relative offsets from base
         uintptr_t mapData = Memory::Read<uintptr_t>(acClientBase + 0x00182938);
         if (!mapData) {
-            std::cout << "[LOS] No map data" << std::endl;
+            if (g_debugLogging.load()) {
+                std::cout << "[LOS] No map data" << std::endl;
+            }
             return true;
         }
 
         byte gridShift = Memory::Read<byte>(acClientBase + 0x00182930);
         int mapSize = Memory::Read<int>(acClientBase + 0x00182934);
 
-        std::cout << "[LOS] Base: 0x" << std::hex << acClientBase
-                  << " MapData: 0x" << mapData << std::dec
-                  << " GridShift: " << (int)gridShift
-                  << " MapSize: " << mapSize << std::endl;
+        if (g_debugLogging.load()) {
+            std::cout << "[LOS] Base: 0x" << std::hex << acClientBase
+                      << " MapData: 0x" << mapData << std::dec
+                      << " GridShift: " << (int)gridShift
+                      << " MapSize: " << mapSize << std::endl;
 
-        std::cout << "[LOS] Positions: Local(" << x1 << "," << y1 << "," << z1
-                  << ") Target(" << x2 << "," << y2 << "," << z2 << ")" << std::endl;
+            std::cout << "[LOS] Positions: Local(" << x1 << "," << y1 << "," << z1
+                      << ") Target(" << x2 << "," << y2 << "," << z2 << ")" << std::endl;
+        }
 
         // Check multiple points along the ray (not just midpoint)
         // This catches walls that aren't exactly at the center
@@ -71,14 +78,16 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
             int gx = (int)checkX;
             int gy = (int)checkY;
 
-            if (i == numChecks / 2) { // Log the middle check point
+            if (g_debugLogging.load() && i == numChecks / 2) { // Log the middle check point
                 std::cout << "[LOS] Check point " << i << ": (" << checkX << ", " << checkY << ", " << checkZ << ")" << std::endl;
                 std::cout << "[LOS] Grid: (" << gx << ", " << gy << ")" << std::endl;
             }
 
             // Bounds check
             if (gx < 0 || gy < 0 || gx >= mapSize || gy >= mapSize) {
-                if (i == numChecks / 2) std::cout << "[LOS] Out of bounds" << std::endl;
+                if (g_debugLogging.load() && i == numChecks / 2) {
+                    std::cout << "[LOS] Out of bounds" << std::endl;
+                }
                 continue; // Skip this check point
             }
 
@@ -101,9 +110,11 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
                 // SOLID (0) blocks everything between floor and ceiling
                 // CORNER (1), FHF (2), CHF (3) also block if within their height range
                 if (checkZ >= floor && checkZ <= ceiling) {
-                    std::cout << "[LOS] *** BLOCKED BY WALL at check point " << i << " ***" << std::endl;
-                    std::cout << "[LOS] Type=" << (int)cubeType << " Floor=" << (int)floor
-                              << " Ceil=" << (int)ceiling << " CheckZ=" << checkZ << std::endl;
+                    if (g_debugLogging.load()) {
+                        std::cout << "[LOS] *** BLOCKED BY WALL at check point " << i << " ***" << std::endl;
+                        std::cout << "[LOS] Type=" << (int)cubeType << " Floor=" << (int)floor
+                                  << " Ceil=" << (int)ceiling << " CheckZ=" << checkZ << std::endl;
+                    }
                     return false;
                 }
             }
@@ -112,7 +123,9 @@ bool CheckLOSSimple(uintptr_t localEntity, uintptr_t targetEntity) {
         return true;
 
     } __except(EXCEPTION_EXECUTE_HANDLER) {
-        std::cout << "[LOS] Exception!" << std::endl;
+        if (g_debugLogging.load()) {
+            std::cout << "[LOS] Exception!" << std::endl;
+        }
         return true;
     }
 }
@@ -122,7 +135,7 @@ bool HasClearLineOfSight(uintptr_t localEntity, uintptr_t targetEntity) {
     DWORD now = GetTickCount();
 
     static int callCount = 0;
-    if (++callCount % 30 == 0) {  // Log every 30th call
+    if (g_debugLogging.load() && ++callCount % 30 == 0) {  // Log every 30th call
         std::cout << "[LOS] HasClearLineOfSight called (local: 0x" << std::hex << localEntity
                   << ", target: 0x" << targetEntity << std::dec << ")" << std::endl;
     }
@@ -131,7 +144,7 @@ bool HasClearLineOfSight(uintptr_t localEntity, uintptr_t targetEntity) {
     for (auto& cache : losCache) {
         if (cache.entity1 == localEntity && cache.entity2 == targetEntity) {
             if (now - cache.timestamp < 100) {
-                if (callCount % 30 == 0) {
+                if (g_debugLogging.load() && callCount % 30 == 0) {
                     std::cout << "[LOS] Cache HIT - returning " << (cache.result ? "true" : "false") << std::endl;
                 }
                 return cache.result; // Return cached - no map lookup needed!
@@ -139,7 +152,7 @@ bool HasClearLineOfSight(uintptr_t localEntity, uintptr_t targetEntity) {
         }
     }
 
-    if (callCount % 30 == 0) {
+    if (g_debugLogging.load() && callCount % 30 == 0) {
         std::cout << "[LOS] Cache MISS - performing actual check" << std::endl;
     }
 
@@ -569,7 +582,7 @@ void UpdateAimbot(Trainer* trainer) {
 
     // DEBUG: Print positions AND raw memory values every 100 frames
     static int frameCount = 0;
-    if (frameCount++ % 100 == 0) {
+    if (g_debugLogging.load() && frameCount++ % 100 == 0) {
         std::cout << "[AIMBOT DEBUG]" << std::endl;
         std::cout << "  Local pos: (" << localX << ", " << localY << ", " << localZ << ")" << std::endl;
         std::cout << "  Target pos (predicted): (" << targetX << ", " << targetY << ", " << targetZ << ")" << std::endl;
@@ -680,7 +693,7 @@ void UpdateTriggerbot(Trainer* trainer) {
 
                 // Debug output
                 static int shootCount = 0;
-                if (shootCount++ % 10 == 0) {
+                if (g_debugLogging.load() && shootCount++ % 10 == 0) {
                     std::cout << "[TRIGGERBOT] Shooting! (delay: " << delay << "ms)" << std::endl;
                 }
             }
@@ -702,6 +715,11 @@ void UpdateTriggerbot(Trainer* trainer) {
             }
         }
     }
+}
+
+// Set debug logging flag
+void SetDebugLogging(bool enabled) {
+    g_debugLogging.store(enabled);
 }
 
 } // namespace Aimbot
