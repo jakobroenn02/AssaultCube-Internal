@@ -30,7 +30,7 @@ public:
     static constexpr uintptr_t OFFSET_HEAD_Z = 0x400;          // Float: Pre-calculated head Z position
 
     // Game state offsets (from module base) - public for aimbot access
-    static constexpr uintptr_t OFFSET_GAME_MODE = 0x0058ABF8;  // int32: Current game mode
+    static constexpr uintptr_t OFFSET_GAME_MODE = 0x0018ABF8;  // int32: Current game mode (absolute: 0x0058ABF8)
 
 private:
     uintptr_t moduleBase;
