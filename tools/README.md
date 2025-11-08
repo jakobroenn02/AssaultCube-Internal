@@ -49,5 +49,3 @@ This ensures the loader only works with verified, unmodified versions of Assault
 - Loading into wrong game versions
 - Working with corrupted executables  
 - Compatibility issues with modified game files
-
-
