@@ -51,12 +51,3 @@ This ensures the loader only works with verified, unmodified versions of Assault
 - Compatibility issues with modified game files
 
 
-
-it still does not work.
-The problem is that in FFA mode, team values are meaningless for enemy detection. The game doesn't use teams to identify enemies in FFA - it just considers everyone an enemy!
-Use team offset 0x30c instead of whatever you were using
-In FFA modes, completely ignore team values and just return true for any valid player that isn't you.,
-The team offset is 0x30c (780 in decimal)!
-But wait, there's MORE! Look at line 0x47d853
-ecx = *(ebx_1 + 0x30c) & 1
-In certain game modes, they're using team & 1 - this means they're checking only the least significant bit of the team value!

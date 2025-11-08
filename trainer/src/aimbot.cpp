@@ -256,17 +256,22 @@ uintptr_t FindClosestEnemy(Trainer* trainer, float& outDistance) {
             continue;
         }
 
-        // Skip teammates (only in team-based modes, not FFA)
+        // Skip teammates (only in team-based modes)
+        // In FFA mode, everyone is an enemy - skip this check entirely
         if (!isFFA) {
             int playerTeam = trainer->GetPlayerTeam(playerPtr);
-            if (playerTeam == localTeam) {
+            // Use bitwise AND to check least significant bit (team & 1)
+            // This is how the game determines teams in certain modes
+            if ((playerTeam & 1) == (localTeam & 1)) {
                 if (g_debugLogging.load()) {
                     std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
-                              << " - teammate (team " << playerTeam << ")" << std::endl;
+                              << " - teammate (team " << playerTeam << " & 1 = " << (playerTeam & 1)
+                              << ", local " << localTeam << " & 1 = " << (localTeam & 1) << ")" << std::endl;
                 }
                 continue;
             }
         }
+        // In FFA mode: everyone who passed IsPlayerValid check is an enemy!
 
         // Get enemy position
         float enemyX, enemyY, enemyZ;
@@ -436,17 +441,22 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
             continue;
         }
 
-        // Skip teammates (only in team-based modes, not FFA)
+        // Skip teammates (only in team-based modes)
+        // In FFA mode, everyone is an enemy - skip this check entirely
         if (!isFFA) {
             int playerTeam = trainer->GetPlayerTeam(playerPtr);
-            if (playerTeam == localTeam) {
+            // Use bitwise AND to check least significant bit (team & 1)
+            // This is how the game determines teams in certain modes
+            if ((playerTeam & 1) == (localTeam & 1)) {
                 if (g_debugLogging.load()) {
                     std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
-                              << " - teammate (team " << playerTeam << ")" << std::endl;
+                              << " - teammate (team " << playerTeam << " & 1 = " << (playerTeam & 1)
+                              << ", local " << localTeam << " & 1 = " << (localTeam & 1) << ")" << std::endl;
                 }
                 continue;
             }
         }
+        // In FFA mode: everyone who passed IsPlayerValid check is an enemy!
 
         // Get target position for visibility check
         float targetX, targetY, targetZ;
