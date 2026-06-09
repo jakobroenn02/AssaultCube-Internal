@@ -54,18 +54,11 @@ private:
 std::atomic<float> triggerbotFOV;  // FOV tolerance for triggerbot (degrees)
 std::atomic<bool> debugLogging;  // Enable/disable debug console logging for performance
 
-// Recoil patch data
-    uintptr_t recoilPatchAddress;
-    std::vector<BYTE> originalRecoilBytes;
-    bool recoilPatched;
-    
     // Player addresses (to be found)
     uintptr_t playerBase;
     uintptr_t healthAddress;
     uintptr_t armorAddress;
     uintptr_t ammoAddress;
-    uintptr_t recoilXAddress;
-    uintptr_t recoilYAddress;
 
     // Frame timing
     std::chrono::steady_clock::time_point lastRenderTime;
@@ -95,12 +88,11 @@ std::atomic<bool> debugLogging;  // Enable/disable debug console logging for per
     static constexpr uintptr_t OFFSET_ARMOR = 0xF0;
     static constexpr uintptr_t OFFSET_TEAM_ID = 0x30C;
     
-    // Recoil system (CORRECTED - based on disassembly)
-    static constexpr uintptr_t OFFSET_WEAPON_RECOIL_PROPERTY = 0x40;  // Float: weapon recoil calculation multiplier
-    static constexpr uintptr_t OFFSET_RECOIL_X = 0x32C;  // Float: Accumulated recoil X (horizontal)
-    static constexpr uintptr_t OFFSET_RECOIL_Y = 0x330;  // Float: Accumulated recoil Y (vertical)
-    static constexpr uintptr_t OFFSET_MAX_RECOIL = 0x324; // Float: Maximum recoil limit
-    static constexpr uintptr_t OFFSET_IS_SHOOTING = 0x61;  // Byte: 1 when firing
+    // View-kick offsets, verified in ac_client.exe: the hit handler (sub_47d000
+    // -> sub_41c0b0) accumulates kick here, clamped to +/-*(player+0x328).
+    // Zeroing both each frame suppresses the kick.
+    static constexpr uintptr_t OFFSET_RECOIL_X = 0x32C;  // Float: accumulated view-kick X
+    static constexpr uintptr_t OFFSET_RECOIL_Y = 0x330;  // Float: accumulated view-kick Y
     
     // Camera angles (affected by recoil)
     static constexpr uintptr_t OFFSET_YAW = 0x34;    // Float: Horizontal rotation (camera)
@@ -183,11 +175,6 @@ public:
     bool FindPlayerBase();
     bool FindHealthAddress();
     bool FindAmmoAddress();
-    bool FindRecoilPatchAddress();
-    
-    // Recoil patching
-    void ApplyRecoilPatch();
-    void RestoreRecoilBytes();
 
     // Utility
     void UpdatePlayerData();
