@@ -788,9 +788,12 @@ bool IsFFAMode() {
     // Read game mode from memory
     int gameMode = Memory::Read<int>(acClientBase + Trainer::OFFSET_GAME_MODE);
 
-    // FFA game modes (everyone is an enemy)
-    // Mode numbers/names verified against ac_client.exe's gamemode name table
-    // (.rdata pointer array at 0x549fec -> strings at 0x55b338).
+    // FFA game modes (everyone is an enemy).
+    // Mode numbers verified against ac_client.exe: names from the gamemode
+    // name table (.rdata array at 0x549fec -> strings at 0x55b338), and the
+    // team/FFA split cross-checked against the game's own m_teammode set
+    // {0,4,5,7,11,13,14,16,17,20,21} as used by the radar code (sub_45bf50 /
+    // sub_45cd10). Note HTF (13) is a TEAM mode; KTF (15) is FFA.
     switch (gameMode) {
         case 2:   // deathmatch
         case 3:   // survivor
@@ -799,7 +802,6 @@ bool IsFFAMode() {
         case 9:   // last swiss standing
         case 10:  // one shot, one kill
         case 12:  // bot one shot, one kill
-        case 13:  // hunt the flag
         case 15:  // keep the flag
         case 18:  // bot pistol frenzy
         case 19:  // bot last swiss standing
@@ -808,7 +810,7 @@ bool IsFFAMode() {
         // Team modes (check team ID):
         //   0 team deathmatch, 4 team survivor, 5 capture the flag,
         //   7 bot team deathmatch, 11 team one shot one kill,
-        //   14 team keep the flag, 16 team pistol frenzy,
+        //   13 hunt the flag, 14 team keep the flag, 16 team pistol frenzy,
         //   17 team last swiss standing, 20 bot team survivor,
         //   21 bot team one shot one kill, and 1 coopedit.
         default:
