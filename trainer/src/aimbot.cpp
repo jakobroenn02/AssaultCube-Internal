@@ -260,13 +260,13 @@ uintptr_t FindClosestEnemy(Trainer* trainer, float& outDistance) {
         // In FFA mode, everyone is an enemy - skip this check entirely
         if (!isFFA) {
             int playerTeam = trainer->GetPlayerTeam(playerPtr);
-            // Use bitwise AND to check least significant bit (team & 1)
-            // This is how the game determines teams in certain modes
-            if ((playerTeam & 1) == (localTeam & 1)) {
+            // In AssaultCube a player's team is 0 (CLA) or 1 (RVSF); a direct
+            // comparison is correct. (Spectators use team IDs >= 2, so masking
+            // the low bit would misclassify them.)
+            if (playerTeam == localTeam) {
                 if (g_debugLogging.load()) {
                     std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
-                              << " - teammate (team " << playerTeam << " & 1 = " << (playerTeam & 1)
-                              << ", local " << localTeam << " & 1 = " << (localTeam & 1) << ")" << std::endl;
+                              << " - teammate (team " << playerTeam << ", local " << localTeam << ")" << std::endl;
                 }
                 continue;
             }
@@ -445,13 +445,13 @@ uintptr_t FindClosestEnemyToCrosshair(Trainer* trainer, float& outFOV) {
         // In FFA mode, everyone is an enemy - skip this check entirely
         if (!isFFA) {
             int playerTeam = trainer->GetPlayerTeam(playerPtr);
-            // Use bitwise AND to check least significant bit (team & 1)
-            // This is how the game determines teams in certain modes
-            if ((playerTeam & 1) == (localTeam & 1)) {
+            // In AssaultCube a player's team is 0 (CLA) or 1 (RVSF); a direct
+            // comparison is correct. (Spectators use team IDs >= 2, so masking
+            // the low bit would misclassify them.)
+            if (playerTeam == localTeam) {
                 if (g_debugLogging.load()) {
                     std::cout << "[AIMBOT] Skipping player 0x" << std::hex << playerPtr << std::dec
-                              << " - teammate (team " << playerTeam << " & 1 = " << (playerTeam & 1)
-                              << ", local " << localTeam << " & 1 = " << (localTeam & 1) << ")" << std::endl;
+                              << " - teammate (team " << playerTeam << ", local " << localTeam << ")" << std::endl;
                 }
                 continue;
             }
@@ -789,29 +789,28 @@ bool IsFFAMode() {
     int gameMode = Memory::Read<int>(acClientBase + Trainer::OFFSET_GAME_MODE);
 
     // FFA game modes (everyone is an enemy)
-    // Based on AssaultCube game mode values
+    // Mode numbers/names verified against ac_client.exe's gamemode name table
+    // (.rdata pointer array at 0x549fec -> strings at 0x55b338).
     switch (gameMode) {
-        case 0:   // Deathmatch
-        case 4:   // Pistol frenzy
-        case 6:   // Bot deathmatch
-        case 7:   // Last swiss standing
-        case 8:   // One shot, one kill
-        case 11:  // Hunt the flag
-        case 13:  // Keep the flag
-        case 16:  // Bot one shot
-        case 17:  // Unknown FFA mode
-        case 20:  // Unknown FFA mode
-        case 21:  // Unknown FFA mode
+        case 2:   // deathmatch
+        case 3:   // survivor
+        case 6:   // pistol frenzy
+        case 8:   // bot deathmatch
+        case 9:   // last swiss standing
+        case 10:  // one shot, one kill
+        case 12:  // bot one shot, one kill
+        case 13:  // hunt the flag
+        case 15:  // keep the flag
+        case 18:  // bot pistol frenzy
+        case 19:  // bot last swiss standing
             return true;
 
-        // Team modes (check team ID)
-        case 2:   // Team survivor
-        case 3:   // Capture the flag
-        case 5:   // Bot team deathmatch
-        case 9:   // Team one shot, one kill
-        case 12:  // Team keep the flag
-        case 14:  // Team pistol frenzy
-        case 15:  // Team last swiss standing
+        // Team modes (check team ID):
+        //   0 team deathmatch, 4 team survivor, 5 capture the flag,
+        //   7 bot team deathmatch, 11 team one shot one kill,
+        //   14 team keep the flag, 16 team pistol frenzy,
+        //   17 team last swiss standing, 20 bot team survivor,
+        //   21 bot team one shot one kill, and 1 coopedit.
         default:
             return false;
     }
