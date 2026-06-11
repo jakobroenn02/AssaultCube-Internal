@@ -42,21 +42,12 @@ Trainer::Trainer(uintptr_t base)
       triggerbotDelay(50.0f),  // 50ms default delay
       triggerbotFOV(2.0f),  // 2 degree tolerance
       debugLogging(false),  // Debug logging OFF by default for performance
-      recoilPatchAddress(0),
-      recoilPatched(false),
       playerBase(0),
       healthAddress(0),
       armorAddress(0),
-      ammoAddress(0),
-      recoilXAddress(0),
-      recoilYAddress(0) {}
+      ammoAddress(0) {}
 
 Trainer::~Trainer() {
-    // Restore recoil bytes if patched
-    if (recoilPatched) {
-        RestoreRecoilBytes();
-    }
-
     ShutdownOverlay();
 }
 
@@ -107,16 +98,7 @@ bool Trainer::Initialize() {
     std::cout << "Health address: 0x" << std::hex << healthAddress << std::dec << std::endl;
     std::cout << "Armor address: 0x" << std::hex << armorAddress << std::dec << std::endl;
     std::cout << "Ammo address: 0x" << std::hex << ammoAddress << std::dec << std::endl;
-    std::cout << "Recoil X address: 0x" << std::hex << recoilXAddress << std::dec << std::endl;
-    std::cout << "Recoil Y address: 0x" << std::hex << recoilYAddress << std::dec << std::endl;
-    
-    // Find recoil patch address
-    if (FindRecoilPatchAddress()) {
-        std::cout << "Recoil patch address found at: 0x" << std::hex << recoilPatchAddress << std::dec << std::endl;
-    } else {
-        std::cout << "WARNING: Could not find recoil patch address" << std::endl;
-    }
-    
+
     // Read and display current values to verify addresses are correct
     int currentHealth = Memory::Read<int>(healthAddress);
     int currentArmor = Memory::Read<int>(armorAddress);
@@ -285,15 +267,12 @@ void Trainer::ToggleNoRecoil() {
     std::cout << "No Recoil: " << (noRecoil ? "ON" : "OFF") << std::endl;
 
     if (noRecoil && playerBase) {
-        std::cout << "  Using multi-method approach:" << std::endl;
-        std::cout << "    1. Zeroing accumulated recoil (0x32C, 0x330)" << std::endl;
-        std::cout << "    2. Zeroing weapon recoil property (0x40)" << std::endl;
-        
-        // Immediately apply all methods
+        std::cout << "  Zeroing accumulated view-kick (0x32C, 0x330)" << std::endl;
+
+        // Immediately zero the view-kick offsets
         Memory::Write<float>(playerBase + OFFSET_RECOIL_X, 0.0f);
         Memory::Write<float>(playerBase + OFFSET_RECOIL_Y, 0.0f);
-        Memory::Write<float>(playerBase + OFFSET_WEAPON_RECOIL_PROPERTY, 0.0f);
-        
+
         std::cout << "  Recoil disabled!" << std::endl;
     } else if (!noRecoil && playerBase) {
         std::cout << "  Restoring normal recoil behavior" << std::endl;
@@ -593,12 +572,9 @@ void Trainer::UpdatePlayerData() {
     }
     
     if (noRecoil && playerBase) {
-        // Method 1: Zero accumulated recoil (prevents recoil buildup)
+        // Zero the accumulated view-kick offsets every frame (prevents buildup)
         Memory::Write<float>(playerBase + OFFSET_RECOIL_X, 0.0f);
         Memory::Write<float>(playerBase + OFFSET_RECOIL_Y, 0.0f);
-        
-        // Method 2: Zero weapon recoil property (reduces recoil calculation)
-        Memory::Write<float>(playerBase + OFFSET_WEAPON_RECOIL_PROPERTY, 0.0f);
     }
     
     if (regenHealth && healthAddress) {
@@ -705,62 +681,6 @@ void Trainer::RequestUnload() {
     isRunning = false;
 }
 
-// Find recoil patch address using pattern scanning
-bool Trainer::FindRecoilPatchAddress() {
-    uintptr_t baseAddress = 0;
-    size_t moduleSize = 0;
-
-    if (!Memory::GetModuleInfo("ac_client.exe", baseAddress, moduleSize)) {
-        std::cout << "WARNING: Failed to query module info for recoil scan" << std::endl;
-        recoilPatchAddress = 0;
-        return false;
-    }
-
-    const char pattern[] = "\xF3\x0F\x11\x83\xCC\x00\x00\x00\xF3\x0F\x11\x8B\xC8\x00\x00\x00";
-    const char mask[] = "xxxxxxxxxxxxxxxx";
-
-    recoilPatchAddress = Memory::FindPattern(baseAddress, moduleSize, pattern, mask);
-
-    if (recoilPatchAddress == 0) {
-        std::cout << "WARNING: Recoil pattern scan failed" << std::endl;
-        return false;
-    }
-
-    return true;
-}
-
-// Apply recoil patch (NOP the recoil instruction)
-void Trainer::ApplyRecoilPatch() {
-    if (recoilPatchAddress == 0 || recoilPatched) return;
-
-    // Save original bytes (assuming 5-byte instruction)
-    constexpr size_t patchSize = 16;
-    originalRecoilBytes.resize(patchSize);
-    for (size_t i = 0; i < patchSize; i++) {
-        originalRecoilBytes[i] = Memory::Read<BYTE>(recoilPatchAddress + i);
-    }
-
-    // Apply NOP patch
-    for (size_t i = 0; i < patchSize; i++) {
-        Memory::Write<BYTE>(recoilPatchAddress + i, 0x90);
-    }
-    
-    recoilPatched = true;
-    std::cout << "Recoil patch applied at 0x" << std::hex << recoilPatchAddress << std::dec << std::endl;
-}
-
-// Restore original recoil bytes
-void Trainer::RestoreRecoilBytes() {
-    if (recoilPatchAddress == 0 || !recoilPatched) return;
-    
-    for (size_t i = 0; i < originalRecoilBytes.size(); i++) {
-        Memory::Write<BYTE>(recoilPatchAddress + i, originalRecoilBytes[i]);
-    }
-    
-    recoilPatched = false;
-    std::cout << "Recoil patch restored" << std::endl;
-}
-
 void Trainer::DisplayStatus() {
     // Deprecated - overlay handles display now
     std::cout << "=== Assault Cube Trainer ===" << std::endl;
@@ -780,14 +700,10 @@ void Trainer::RefreshPlayerAddresses() {
             healthAddress = playerBase + OFFSET_HEALTH;
             armorAddress = playerBase + OFFSET_ARMOR;
             ammoAddress = playerBase + OFFSET_AR_AMMO;
-            recoilXAddress = playerBase + OFFSET_RECOIL_X;
-            recoilYAddress = playerBase + OFFSET_RECOIL_Y;
         } else {
             healthAddress = 0;
             armorAddress = 0;
             ammoAddress = 0;
-            recoilXAddress = 0;
-            recoilYAddress = 0;
         }
     }
 }
